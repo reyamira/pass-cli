@@ -5,7 +5,7 @@ toc: true
 ---
 This document explains how to use, test, and submit the Scoop manifest for Pass-CLI on Windows.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 
 ## Overview
@@ -23,7 +23,7 @@ The Scoop manifest enables easy installation of Pass-CLI on Windows systems thro
 
 ```powershell
 # Add the bucket
-scoop bucket add pass-cli https://github.com/arimxyer/scoop-bucket
+scoop bucket add pass-cli https://github.com/reyamira/scoop-bucket
 
 # Install Pass-CLI
 scoop install pass-cli
@@ -55,7 +55,7 @@ A Scoop bucket is a GitHub repository that contains Scoop manifests.
 
 ```powershell
 # Clone your new repository
-git clone https://github.com/arimxyer/scoop-bucket.git
+git clone https://github.com/reyamira/scoop-bucket.git
 cd scoop-bucket
 
 # Create bucket directory structure
@@ -76,7 +76,7 @@ After creating a release, you need to update the SHA256 hashes in the manifest:
 
 ```powershell
 # Download each release artifact and calculate its hash
-$url = "https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_amd64.zip"
+$url = "https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_amd64.zip"
 $hash = (Get-FileHash (Invoke-WebRequest $url -OutFile temp.zip -PassThru).FullName -Algorithm SHA256).Hash
 
 # Repeat for each architecture:
@@ -89,7 +89,7 @@ $hash = (Get-FileHash (Invoke-WebRequest $url -OutFile temp.zip -PassThru).FullN
 Alternatively, use Scoop's built-in hash tool:
 
 ```powershell
-scoop hash https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_amd64.zip
+scoop hash https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_amd64.zip
 ```
 
 ## Testing the Manifest
@@ -101,7 +101,7 @@ scoop hash https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cl
 scoop install .\scoop\pass-cli.json
 
 # Or test from the bucket
-scoop bucket add pass-cli https://github.com/arimxyer/scoop-bucket
+scoop bucket add pass-cli https://github.com/reyamira/scoop-bucket
 scoop install pass-cli
 
 # Test the installation
@@ -175,7 +175,7 @@ Test on all supported Windows architectures:
 ```json
 {
   "checkver": {
-    "github": "https://github.com/arimxyer/pass-cli"
+    "github": "https://github.com/reyamira/pass-cli"
   },
   "autoupdate": {
     "architecture": {
@@ -323,12 +323,12 @@ When releasing a new version:
 
 2. **Update URLs**
    ```json
-   "url": "https://github.com/arimxyer/pass-cli/releases/download/v1.1.0/..."
+   "url": "https://github.com/reyamira/pass-cli/releases/download/v1.1.0/..."
    ```
 
 3. **Update Hashes**
    ```powershell
-   scoop hash https://github.com/arimxyer/pass-cli/releases/download/v1.1.0/pass-cli_1.1.0_windows_amd64.zip
+   scoop hash https://github.com/reyamira/pass-cli/releases/download/v1.1.0/pass-cli_1.1.0_windows_amd64.zip
    ```
 
 4. **Test and Submit**
@@ -365,7 +365,7 @@ param(
     [string]$Version
 )
 
-$baseUrl = "https://github.com/arimxyer/pass-cli/releases/download/v$Version"
+$baseUrl = "https://github.com/reyamira/pass-cli/releases/download/v$Version"
 $manifest = Get-Content scoop\pass-cli.json | ConvertFrom-Json
 
 # Update version
@@ -419,7 +419,7 @@ Usage:
 
 ```powershell
 # Recalculate the hash
-scoop hash https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_amd64.zip
+scoop hash https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_amd64.zip
 
 # Or manually
 $hash = (Get-FileHash .\pass-cli_0.0.1_windows_amd64.zip).Hash

@@ -5,7 +5,7 @@ toc: true
 ---
 Complete reference for all pass-cli commands and their options.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 ## Global Options
 
@@ -2032,7 +2032,7 @@ See [Quick Start Guide](../01-getting-started/quick-start) for complete first-ru
 ## Getting Help
 
 - Run any command with `--help` flag
-- See [pass-cli Documentation](https://arimxyer.github.io/pass-cli/) for overview
+- See [pass-cli Documentation](https://reyamira.github.io/pass-cli/) for overview
 - Check [Troubleshooting](../04-troubleshooting/_index) for common issues
-- Visit [GitHub Issues](https://github.com/arimxyer/pass-cli/issues)
+- Visit [GitHub Issues](https://github.com/reyamira/pass-cli/issues)
 

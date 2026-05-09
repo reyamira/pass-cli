@@ -62,7 +62,7 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
 
     # Files to include in archive (essential docs only)
-    # Full documentation available at https://arimxyer.github.io/pass-cli/
+    # Full documentation available at https://reyamira.github.io/pass-cli/
     files:
       - LICENSE*
       - README*
@@ -104,7 +104,7 @@ changelog:
 
 release:
   github:
-    owner: arimxyer
+    owner: reyamira
     name: pass-cli
 
   # Release name format
@@ -129,12 +129,12 @@ release:
 
     #### Homebrew (macOS/Linux)
     ```bash
-    brew install arimxyer/tap/pass-cli
+    brew install reyamira/tap/pass-cli
     ```
 
     #### Scoop (Windows)
     ```powershell
-    scoop bucket add arimxyer https://github.com/arimxyer/scoop-bucket
+    scoop bucket add reyamira https://github.com/reyamira/scoop-bucket
     scoop install pass-cli
     ```
 
@@ -150,7 +150,7 @@ release:
     ```
 
     ### Full Changelog
-    See the full changelog at https://github.com/arimxyer/pass-cli/blob/main/CHANGELOG.md
+    See the full changelog at https://github.com/reyamira/pass-cli/blob/main/CHANGELOG.md
 
 # Universal Binaries for macOS (combines amd64 and arm64)
 universal_binaries:
@@ -260,7 +260,7 @@ brews:
 
     # Tap repository (GoReleaser will auto-create/update the formula)
     repository:
-      owner: arimxyer
+      owner: reyamira
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
 
@@ -268,7 +268,7 @@ brews:
     directory: Formula
 
     # Metadata
-    homepage: https://github.com/arimxyer/pass-cli
+    homepage: https://github.com/reyamira/pass-cli
     description: "Secure, cross-platform CLI password and API key manager for developers"
     license: MIT
 
@@ -297,7 +297,7 @@ brews:
         • Usage tracking and audit logging
 
       Vault location: ~/.pass-cli/vault.enc
-      Complete guide: https://github.com/arimxyer/pass-cli/blob/main/docs/GETTING_STARTED.md
+      Complete guide: https://github.com/reyamira/pass-cli/blob/main/docs/GETTING_STARTED.md
 
 # Scoop bucket (automated manifest creation and updates)
 scoops:
@@ -305,7 +305,7 @@ scoops:
 
     # Bucket repository (GoReleaser will auto-create/update the manifest)
     repository:
-      owner: arimxyer
+      owner: reyamira
       name: scoop-bucket
       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
 
@@ -313,7 +313,7 @@ scoops:
     directory: bucket
 
     # Metadata
-    homepage: https://github.com/arimxyer/pass-cli
+    homepage: https://github.com/reyamira/pass-cli
     description: "Secure, cross-platform CLI password and API key manager for developers"
     license: MIT
 
@@ -321,4 +321,4 @@ scoops:
     post_install:
       - "Write-Host 'Pass-CLI installed! First-time: Run `pass-cli` for guided setup.' -ForegroundColor Green"
       - "Write-Host 'TUI: pass-cli | Health check: pass-cli doctor | Enable keychain: pass-cli keychain enable' -ForegroundColor Cyan"
-      - "Write-Host 'Guide: https://github.com/arimxyer/pass-cli/blob/main/docs/GETTING_STARTED.md' -ForegroundColor Yellow"
+      - "Write-Host 'Guide: https://github.com/reyamira/pass-cli/blob/main/docs/GETTING_STARTED.md' -ForegroundColor Yellow"

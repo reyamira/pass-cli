@@ -5,7 +5,7 @@ toc: true
 ---
 Fast installation using package managers for Pass-CLI across all supported platforms.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 ## Quick Install
 
@@ -13,7 +13,7 @@ Fast installation using package managers for Pass-CLI across all supported platf
 
 ```bash
 # Using Homebrew
-brew tap arimxyer/homebrew-tap
+brew tap reyamira/homebrew-tap
 brew install pass-cli
 ```
 
@@ -21,7 +21,7 @@ brew install pass-cli
 
 ```powershell
 # Using Scoop
-scoop bucket add pass-cli https://github.com/arimxyer/scoop-bucket
+scoop bucket add pass-cli https://github.com/reyamira/scoop-bucket
 scoop install pass-cli
 ```
 
@@ -42,7 +42,7 @@ Homebrew is the recommended installation method for macOS and Linux.
 
 ```bash
 # Add the Pass-CLI tap
-brew tap arimxyer/homebrew-tap
+brew tap reyamira/homebrew-tap
 
 # Install Pass-CLI
 brew install pass-cli
@@ -85,7 +85,7 @@ Scoop is the recommended installation method for Windows.
 
 ```powershell
 # Add the Pass-CLI bucket
-scoop bucket add pass-cli https://github.com/arimxyer/scoop-bucket
+scoop bucket add pass-cli https://github.com/reyamira/scoop-bucket
 
 # Install Pass-CLI
 scoop install pass-cli

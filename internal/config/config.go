@@ -200,7 +200,7 @@ theme: "dracula"
 #   remote: "dropbox:Apps/pass-cli" # Dropbox
 #   remote: "onedrive:Documents/pass-cli" # OneDrive
 #
-# See: https://arimxyer.github.io/pass-cli/docs/02-guides/sync-guide/
+# See: https://reyamira.github.io/pass-cli/docs/02-guides/sync-guide/
 
 # Terminal size warning configuration
 terminal:

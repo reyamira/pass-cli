@@ -5,13 +5,13 @@
 <p align="center">
   <strong>A secure, cross-platform, always-free, and open-source alternative to 1password, bitwarden, etc., Password and API key manager for folks who live in the command line. (CLI + TUI) </strong>
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version" alt="Version">
-  <img src="https://img.shields.io/github/last-commit/arimxyer/pass-cli?label=Last%20Updated" alt="Last Updated">
+  <img src="https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version" alt="Version">
+  <img src="https://img.shields.io/github/last-commit/reyamira/pass-cli?label=Last%20Updated" alt="Last Updated">
 </p>
 
 Pass-CLI is a fast, secure password and API key manager that stores credentials locally with AES-256-GCM encryption. Built for developers who need quick, script-friendly access to credentials without cloud dependencies.
 
-📚 **[View Full Documentation](https://arimxyer.github.io/pass-cli/)** | [Getting Started](docs/01-getting-started/quick-start.md) | [Installation](docs/01-getting-started/quick-install.md) | [Usage Guide](docs/03-reference/command-reference.md)
+📚 **[View Full Documentation](https://reyamira.github.io/pass-cli/)** | [Getting Started](docs/01-getting-started/quick-start.md) | [Installation](docs/01-getting-started/quick-install.md) | [Usage Guide](docs/03-reference/command-reference.md)
 
 ## Key Features
 
@@ -36,13 +36,13 @@ Pass-CLI is a fast, secure password and API key manager that stores credentials 
 
 **macOS / Linux (Homebrew)**:
 ```bash
-brew tap arimxyer/homebrew-tap
+brew tap reyamira/homebrew-tap
 brew install pass-cli
 ```
 
 **Windows (Scoop)**:
 ```powershell
-scoop bucket add arimxyer https://github.com/arimxyer/scoop-bucket
+scoop bucket add reyamira https://github.com/reyamira/scoop-bucket
 scoop install pass-cli
 ```
 
@@ -206,7 +206,7 @@ For complete security details, best practices, and migration guides, see [docs/0
 
 ```bash
 # Clone and build
-git clone https://github.com/arimxyer/pass-cli.git
+git clone https://github.com/reyamira/pass-cli.git
 cd pass-cli
 go build -o pass-cli .
 
@@ -252,7 +252,7 @@ For more questions and troubleshooting, see [docs/04-troubleshooting/faq.md](doc
 
 ## Roadmap
 
-Have a feature request? Open an issue on [GitHub](https://github.com/arimxyer/pass-cli/issues).
+Have a feature request? Open an issue on [GitHub](https://github.com/reyamira/pass-cli/issues).
 
 ## Contributing
 
@@ -264,9 +264,9 @@ This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE
 
 ## Links
 
-- **Releases**: [GitHub Releases](https://github.com/arimxyer/pass-cli/releases)
-- **Issues**: [GitHub Issues](https://github.com/arimxyer/pass-cli/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/arimxyer/pass-cli/discussions)
+- **Releases**: [GitHub Releases](https://github.com/reyamira/pass-cli/releases)
+- **Issues**: [GitHub Issues](https://github.com/reyamira/pass-cli/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/reyamira/pass-cli/discussions)
 
 ---
 

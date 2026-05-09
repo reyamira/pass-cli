@@ -5,7 +5,7 @@ toc: true
 ---
 This document explains how to use, test, and submit the Homebrew formula for Pass-CLI.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 ## Overview
 
@@ -22,7 +22,7 @@ The Homebrew formula enables easy installation of Pass-CLI on macOS and Linux sy
 
 ```bash
 # Add the tap
-brew tap arimxyer/homebrew-tap
+brew tap reyamira/homebrew-tap
 
 # Install Pass-CLI
 brew install pass-cli
@@ -49,7 +49,7 @@ A Homebrew tap is a GitHub repository that contains Homebrew formulae.
 
 ```bash
 # Clone your new repository
-git clone https://github.com/arimxyer/homebrew-tap.git
+git clone https://github.com/reyamira/homebrew-tap.git
 cd homebrew-tap
 
 # Create Formula directory
@@ -70,7 +70,7 @@ After creating a release, you need to update the SHA256 checksums in the formula
 
 ```bash
 # Download each release artifact and calculate its checksum
-curl -L "https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_darwin_amd64.tar.gz" | sha256sum
+curl -L "https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_darwin_amd64.tar.gz" | sha256sum
 
 # Repeat for each platform:
 # - darwin_amd64
@@ -90,7 +90,7 @@ curl -L "https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_
 brew install --build-from-source homebrew/pass-cli.rb
 
 # Or use brew install with the tap
-brew install --debug --verbose arimxyer/homebrew-tap/pass-cli
+brew install --debug --verbose reyamira/homebrew-tap/pass-cli
 
 # Test the installation
 pass-cli version
@@ -195,7 +195,7 @@ When releasing a new version:
 
 2. **Update URLs**
    ```ruby
-   url "https://github.com/arimxyer/pass-cli/releases/download/v1.1.0/..."
+   url "https://github.com/reyamira/pass-cli/releases/download/v1.1.0/..."
    ```
 
 3. **Update SHA256 Checksums**
@@ -226,7 +226,7 @@ Consider adding automation to update checksums:
 # Example script to calculate checksums
 #!/bin/bash
 VERSION="0.0.1"
-BASE_URL="https://github.com/arimxyer/pass-cli/releases/download/v${VERSION}"
+BASE_URL="https://github.com/reyamira/pass-cli/releases/download/v${VERSION}"
 
 for os in darwin linux; do
   for arch in amd64 arm64; do

@@ -459,4 +459,4 @@ This changelog follows these principles:
 - **Fixed** for any bug fixes
 - **Security** for vulnerability fixes
 
-For detailed commit-level changes, see [GitHub Releases](https://github.com/arimxyer/pass-cli/releases).
+For detailed commit-level changes, see [GitHub Releases](https://github.com/reyamira/pass-cli/releases).

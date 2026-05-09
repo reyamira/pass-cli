@@ -1,7 +1,7 @@
 # Contributing to Pass-CLI
 Thank you for your interest in contributing to Pass-CLI! This document provides guidelines for contributing to the project.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?label=Last%20Updated)
 
 
 ## Documentation Governance

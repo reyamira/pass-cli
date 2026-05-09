@@ -5,7 +5,7 @@ toc: true
 ---
 This document describes the branching strategy and workflow for pass-cli development.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 
 ## Branch Structure
@@ -24,7 +24,7 @@ This document describes the branching strategy and workflow for pass-cli develop
 
 ```bash
 # Clone repo (if new)
-git clone https://github.com/arimxyer/pass-cli.git
+git clone https://github.com/reyamira/pass-cli.git
 cd pass-cli
 
 # Make sure you're up to date
@@ -50,7 +50,7 @@ git commit -m "feat: add new feature"
 git push origin feat/my-feature-name
 
 # Create PR via GitHub
-# Go to: https://github.com/arimxyer/pass-cli/compare/main...feat/my-feature-name
+# Go to: https://github.com/reyamira/pass-cli/compare/main...feat/my-feature-name
 # CI runs automatically on your PR
 ```
 
@@ -313,8 +313,8 @@ git push origin feat/my-feature
 
 ## References
 
-- GitHub Actions: https://github.com/arimxyer/pass-cli/actions
-- Branch Settings: https://github.com/arimxyer/pass-cli/settings/rules
+- GitHub Actions: https://github.com/reyamira/pass-cli/actions
+- Branch Settings: https://github.com/reyamira/pass-cli/settings/rules
 - Release Workflow: `.github/workflows/release.yml`
 - CI Workflow: `.github/workflows/ci.yml`
-- Pull Requests: https://github.com/arimxyer/pass-cli/pulls
+- Pull Requests: https://github.com/reyamira/pass-cli/pulls

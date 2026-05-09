@@ -7,12 +7,12 @@ PackageVersion: 1.0.0
 PackageLocale: en-US
 Publisher: arimxyer
 PublisherUrl: https://github.com/arimxyer
-PublisherSupportUrl: https://github.com/arimxyer/pass-cli/issues
+PublisherSupportUrl: https://github.com/reyamira/pass-cli/issues
 Author: arimxyer
 PackageName: Pass-CLI
-PackageUrl: https://github.com/arimxyer/pass-cli
+PackageUrl: https://github.com/reyamira/pass-cli
 License: MIT
-LicenseUrl: https://github.com/arimxyer/pass-cli/blob/main/LICENSE
+LicenseUrl: https://github.com/reyamira/pass-cli/blob/main/LICENSE
 Copyright: Copyright (c) 2025 arimxyer
 ShortDescription: A secure, cross-platform CLI password and API key manager for developers
 Description: |-
@@ -42,7 +42,7 @@ Tags:
 Installers:
   - Architecture: x64
     InstallerType: zip
-    InstallerUrl: https://github.com/arimxyer/pass-cli/releases/download/v1.0.0/pass-cli_1.0.0_windows_x86_64.zip
+    InstallerUrl: https://github.com/reyamira/pass-cli/releases/download/v1.0.0/pass-cli_1.0.0_windows_x86_64.zip
     InstallerSha256: PLACEHOLDER_HASH_AMD64
     NestedInstallerFiles:
       - RelativeFilePath: pass-cli.exe
@@ -50,7 +50,7 @@ Installers:
 
   - Architecture: arm64
     InstallerType: zip
-    InstallerUrl: https://github.com/arimxyer/pass-cli/releases/download/v1.0.0/pass-cli_1.0.0_windows_arm64.zip
+    InstallerUrl: https://github.com/reyamira/pass-cli/releases/download/v1.0.0/pass-cli_1.0.0_windows_arm64.zip
     InstallerSha256: PLACEHOLDER_HASH_ARM64
     NestedInstallerFiles:
       - RelativeFilePath: pass-cli.exe

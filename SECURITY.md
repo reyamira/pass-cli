@@ -15,7 +15,7 @@ We release security updates for the following versions:
 
 Instead, please report security vulnerabilities through GitHub's private vulnerability reporting:
 
-1. Go to the [Security tab](https://github.com/arimxyer/pass-cli/security)
+1. Go to the [Security tab](https://github.com/reyamira/pass-cli/security)
 2. Click "Report a vulnerability"
 3. Fill out the advisory form with the details below
 

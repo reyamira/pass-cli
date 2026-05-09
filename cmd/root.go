@@ -50,7 +50,7 @@ Examples:
   # List all credentials
   pass-cli list
 
-For more information, visit: https://github.com/arimxyer/pass-cli`,
+For more information, visit: https://github.com/reyamira/pass-cli`,
 		PersistentPreRunE: checkFirstRun,
 		Run:               runRootCommand,
 	}
@@ -66,7 +66,7 @@ func Execute() {
 
 func init() {
 	// NOTE: Config loading moved to PersistentPreRunE to ensure --config flag is parsed first
-	// See issue #65: https://github.com/arimxyer/pass-cli/issues/65
+	// See issue #65: https://github.com/reyamira/pass-cli/issues/65
 
 	// T037: Custom flag error handler for migration guidance
 	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
@@ -80,7 +80,7 @@ Instead, configure your vault location in the config file:
   3. Run your command without the --vault flag
 
 For more details, see the migration guide:
-  https://github.com/arimxyer/pass-cli/blob/main/docs/MIGRATION.md
+  https://github.com/reyamira/pass-cli/blob/main/docs/MIGRATION.md
 
 Original error: %w`, os.Getenv("HOME"), err)
 		}

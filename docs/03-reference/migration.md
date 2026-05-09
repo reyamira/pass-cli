@@ -5,7 +5,7 @@ toc: true
 ---
 Guide for upgrading Pass-CLI vaults and adapting to security hardening changes introduced in v0.3.0.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 
 ## Overview
@@ -739,5 +739,5 @@ Time includes manual re-entry of credentials. Future in-place migration will be 
 ## Support
 
 - **Documentation**: [Security Architecture](security-architecture), [Command Reference](command-reference)
-- **Issues**: [GitHub Issues](https://github.com/arimxyer/pass-cli/issues)
+- **Issues**: [GitHub Issues](https://github.com/reyamira/pass-cli/issues)
 
