@@ -193,11 +193,9 @@ func runExec(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create vault service at %s: %w", vaultPath, err)
 	}
 
-	// Smart sync pull before unlock to get latest version (read-only: no push after)
-	syncPullBeforeUnlock(vaultService)
-
-	// Unlock vault
-	if err := unlockVault(vaultService); err != nil {
+	// Pull from remote and unlock, overlapping the pull with the password prompt
+	// (#103; read-only: no push after).
+	if err := unlockVaultWithSync(vaultService); err != nil {
 		return err
 	}
 	defer vaultService.Lock()
