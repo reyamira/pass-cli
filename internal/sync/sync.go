@@ -293,7 +293,7 @@ func (s *Service) SmartPull(vaultPath string) error {
 	if hasMarker {
 		remoteChanged = remoteHash != state.LastPushHash
 	} else {
-		remoteChanged = !(remoteVault.ModTime.Equal(state.RemoteModTime) && remoteVault.Size == state.RemoteSize)
+		remoteChanged = !remoteVault.ModTime.Equal(state.RemoteModTime) || remoteVault.Size != state.RemoteSize
 	}
 	if !remoteChanged {
 		return nil // Remote unchanged, skip pull
