@@ -696,54 +696,75 @@ func (v *VaultService) Unlock(masterPassword []byte) error {
 		return nil // Already unlocked
 	}
 
-	// T036e: Check for incomplete migration (vault.tmp exists)
-	vaultTmpPath := v.vaultPath + storage.TempSuffix
-	vaultBackupPath := v.vaultPath + storage.BackupSuffix
-
-	if _, err := os.Stat(vaultTmpPath); err == nil {
-		// T036g: Incomplete migration detected - inform user with actionable message
-		fmt.Fprintf(os.Stderr, "\n*** MIGRATION FAILURE DETECTED ***\n")
-		fmt.Fprintf(os.Stderr, "An incomplete vault migration was found (power loss or system crash).\n")
-
-		if _, err := os.Stat(vaultBackupPath); err == nil {
-			// Backup exists - restore it
-			fmt.Fprintf(os.Stderr, "Attempting automatic recovery from backup...\n")
-
-			// Read backup
-			backupData, err := os.ReadFile(vaultBackupPath) // #nosec G304 -- Vault backup path validated by storage layer
-			if err != nil {
-				return fmt.Errorf("failed to read backup for rollback: %w", err)
-			}
-
-			// Restore to main vault path
-			if err := os.WriteFile(v.vaultPath, backupData, storage.VaultPermissions); err != nil {
-				return fmt.Errorf("failed to restore backup: %w", err)
-			}
-
-			// Remove incomplete temp file
-			_ = os.Remove(vaultTmpPath)
-
-			fmt.Fprintf(os.Stderr, "SUCCESS: Vault restored from backup. Your data is safe.\n")
-			fmt.Fprintf(os.Stderr, "You may continue using the vault normally.\n\n")
-		} else {
-			// No backup available - just remove temp file and warn
-			fmt.Fprintf(os.Stderr, "WARNING: No backup file found. Cleaning up temporary files.\n")
-			_ = os.Remove(vaultTmpPath)
-			fmt.Fprintf(os.Stderr, "If you experience issues, please report this immediately.\n\n")
-		}
+	if err := v.handleIncompleteMigration(); err != nil {
+		return err
 	}
 
-	// Convert to string for storage service (TODO: Phase 4 will update storage.go to accept []byte)
-	masterPasswordStr := string(masterPassword)
-
-	// Try to load vault
-	data, err := v.storageService.LoadVault(masterPasswordStr)
+	// Load + decrypt the vault (derives the key from the password — the
+	// expensive PBKDF2 step happens inside LoadVault).
+	data, err := v.storageService.LoadVault(string(masterPassword))
 	if err != nil {
 		// T068: Log unlock failure (FR-019)
 		v.LogAudit(security.EventVaultUnlock, security.OutcomeFailure, "")
 		return fmt.Errorf("failed to unlock vault: %w", err)
 	}
 
+	return v.finishUnlock(data, masterPassword)
+}
+
+// handleIncompleteMigration auto-recovers from an interrupted vault migration
+// (a leftover vault.tmp): restores from backup if present, otherwise cleans up
+// the temp file with a warning. No-op when no incomplete migration is detected.
+// T036e/T036g.
+func (v *VaultService) handleIncompleteMigration() error {
+	vaultTmpPath := v.vaultPath + storage.TempSuffix
+	vaultBackupPath := v.vaultPath + storage.BackupSuffix
+
+	if _, err := os.Stat(vaultTmpPath); err != nil {
+		return nil // no incomplete migration
+	}
+
+	// T036g: Incomplete migration detected - inform user with actionable message
+	fmt.Fprintf(os.Stderr, "\n*** MIGRATION FAILURE DETECTED ***\n")
+	fmt.Fprintf(os.Stderr, "An incomplete vault migration was found (power loss or system crash).\n")
+
+	if _, err := os.Stat(vaultBackupPath); err == nil {
+		// Backup exists - restore it
+		fmt.Fprintf(os.Stderr, "Attempting automatic recovery from backup...\n")
+
+		// Read backup
+		backupData, err := os.ReadFile(vaultBackupPath) // #nosec G304 -- Vault backup path validated by storage layer
+		if err != nil {
+			return fmt.Errorf("failed to read backup for rollback: %w", err)
+		}
+
+		// Restore to main vault path
+		if err := os.WriteFile(v.vaultPath, backupData, storage.VaultPermissions); err != nil {
+			return fmt.Errorf("failed to restore backup: %w", err)
+		}
+
+		// Remove incomplete temp file
+		_ = os.Remove(vaultTmpPath)
+
+		fmt.Fprintf(os.Stderr, "SUCCESS: Vault restored from backup. Your data is safe.\n")
+		fmt.Fprintf(os.Stderr, "You may continue using the vault normally.\n\n")
+	} else {
+		// No backup available - just remove temp file and warn
+		fmt.Fprintf(os.Stderr, "WARNING: No backup file found. Cleaning up temporary files.\n")
+		_ = os.Remove(vaultTmpPath)
+		fmt.Fprintf(os.Stderr, "If you experience issues, please report this immediately.\n\n")
+	}
+	return nil
+}
+
+// finishUnlock completes an unlock once the plaintext vault data is in hand,
+// independent of HOW it was decrypted (password path via Unlock, or prepared-key
+// path via UnlockWithPreparedKey). It sets in-memory state — including a copy of
+// masterPassword for later saves (NOT recoveryDEK; that distinction is why the
+// recovery-oriented UnlockWithKey can't be reused for keychain unlock) — restores
+// audit logging, synchronizes metadata, removes the post-migration backup, and
+// logs success.
+func (v *VaultService) finishUnlock(data []byte, masterPassword []byte) error {
 	// Unmarshal vault data
 	var vaultData VaultData
 	if err := json.Unmarshal(data, &vaultData); err != nil {
@@ -925,6 +946,78 @@ func (v *VaultService) UnlockWithKey(vaultKey []byte) error {
 	v.LogAudit(security.EventVaultUnlock, security.OutcomeSuccess, "recovery")
 
 	return nil
+}
+
+// PreparedUnlock holds key-derivation parameters captured before a sync pull so
+// the expensive PBKDF2 derivation can overlap the pull (#103 Tier 2). It is
+// produced by PrepareUnlock, derives the data key via DeriveDataKey (safe to run
+// while a pull is in flight), and is consumed by UnlockWithPreparedKey.
+type PreparedUnlock struct {
+	storageService *storage.StorageService
+	params         storage.PreparedKeyParams
+}
+
+// PrepareUnlock reads the current key-derivation parameters (cheap, pre-pull).
+// Call this before kicking off SyncPull, then run DeriveDataKey concurrently with
+// the pull, then UnlockWithPreparedKey after the join.
+func (v *VaultService) PrepareUnlock() (*PreparedUnlock, error) {
+	params, err := v.storageService.ReadKeyParams()
+	if err != nil {
+		return nil, err
+	}
+	return &PreparedUnlock{storageService: v.storageService, params: params}, nil
+}
+
+// DeriveDataKey runs the expensive PBKDF2 derivation against the captured
+// parameters (no file access) — safe to call while a sync pull is in flight.
+// The returned key is handed to UnlockWithPreparedKey, which clears it.
+func (p *PreparedUnlock) DeriveDataKey(password []byte) ([]byte, error) {
+	return p.storageService.DeriveDataKey(string(password), p.params)
+}
+
+// UnlockWithPreparedKey completes a keychain unlock using dataKey derived ahead
+// of time (concurrently with a sync pull). If the vault was re-keyed since the
+// parameters were captured — a password change or re-key on another device that a
+// just-completed pull brought in — the prepared key is stale. That is detected by
+// comparing the current on-disk key parameters against the captured ones; on a
+// mismatch it falls back to a full password unlock, making this path behave
+// identically to a sequential keychain unlock in that edge (e.g. a stale-keychain
+// password fails cleanly at unlock rather than unlocking then breaking saves).
+// A decrypt failure is a belt-and-suspenders second fallback. masterPassword and
+// dataKey are cleared before returning.
+func (v *VaultService) UnlockWithPreparedKey(prep *PreparedUnlock, dataKey, masterPassword []byte) error {
+	defer crypto.ClearBytes(masterPassword)
+	defer crypto.ClearBytes(dataKey)
+
+	if v.unlocked {
+		return nil // Already unlocked
+	}
+
+	if err := v.handleIncompleteMigration(); err != nil {
+		return err
+	}
+
+	// Re-read params from the (possibly pulled) file. If they differ from what we
+	// derived against, the prepared key is stale → full re-derive against current
+	// params, keeping behavior identical to a sequential unlock on any re-key.
+	current, err := v.storageService.ReadKeyParams()
+	preparedKeyUsable := err == nil && prep != nil && prep.params.Equal(current)
+
+	if preparedKeyUsable {
+		if data, decErr := v.storageService.LoadVaultWithKey(dataKey); decErr == nil {
+			return v.finishUnlock(data, masterPassword)
+		}
+		// Belt-and-suspenders: params matched but decrypt unexpectedly failed —
+		// fall through to the password path rather than failing the unlock.
+	}
+
+	// Fallback: full password unlock (re-derives against current params).
+	data, err := v.storageService.LoadVault(string(masterPassword))
+	if err != nil {
+		v.LogAudit(security.EventVaultUnlock, security.OutcomeFailure, "")
+		return fmt.Errorf("failed to unlock vault: %w", err)
+	}
+	return v.finishUnlock(data, masterPassword)
 }
 
 // UnlockWithKeychain attempts to unlock using keychain-stored password

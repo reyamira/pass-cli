@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -248,10 +249,12 @@ func (s *StorageService) loadVaultV2(encryptedVault *EncryptedVault, password st
 	return plaintext, nil
 }
 
-// LoadVaultWithKey loads and decrypts vault using a provided encryption key
-// Used for recovery when we have the vault recovery key instead of a password
-// Parameters: key (32-byte AES-256 key)
-// Returns: decrypted vault data, error
+// LoadVaultWithKey loads and decrypts the vault using a provided data-decryption
+// key, skipping password-to-key derivation. Used both for recovery (where the key
+// comes from a recovery secret) and for the prepared-key unlock path (#103 Tier 2),
+// where the key was derived ahead of time via DeriveDataKey. For v1 the key is the
+// password-derived key; for v2 it is the unwrapped DEK.
+// Parameters: key (32-byte AES-256 key). Returns: decrypted vault data, error.
 func (s *StorageService) LoadVaultWithKey(key []byte) ([]byte, error) {
 	encryptedVault, err := s.loadEncryptedVault()
 	if err != nil {
@@ -261,10 +264,89 @@ func (s *StorageService) LoadVaultWithKey(key []byte) ([]byte, error) {
 	// Decrypt vault data with provided key (skip password-to-key derivation)
 	plaintext, err := s.cryptoService.Decrypt(encryptedVault.Data, key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt vault with recovery key: %w", err)
+		return nil, fmt.Errorf("failed to decrypt vault with provided key: %w", err)
 	}
 
 	return plaintext, nil
+}
+
+// PreparedKeyParams carries the key-derivation parameters read from the vault
+// header. They feed DeriveDataKey to compute the data-decryption key ahead of
+// time (concurrently with a sync pull) without touching the ciphertext, and they
+// are compared post-pull to detect a re-key (see vault.UnlockWithPreparedKey).
+type PreparedKeyParams struct {
+	Version         int
+	Salt            []byte
+	Iterations      int
+	WrappedDEK      []byte
+	WrappedDEKNonce []byte
+}
+
+// Equal reports whether two parameter sets would derive the same key against the
+// same ciphertext. Used to detect that the vault was re-keyed (password change or
+// re-key) between reading the params and decrypting.
+func (p PreparedKeyParams) Equal(o PreparedKeyParams) bool {
+	return p.Version == o.Version &&
+		p.Iterations == o.Iterations &&
+		bytes.Equal(p.Salt, o.Salt) &&
+		bytes.Equal(p.WrappedDEK, o.WrappedDEK) &&
+		bytes.Equal(p.WrappedDEKNonce, o.WrappedDEKNonce)
+}
+
+// ReadKeyParams reads the current on-disk key-derivation parameters without
+// decrypting the vault. Cheap; intended to run before a sync pull so the
+// expensive DeriveDataKey can overlap the pull.
+func (s *StorageService) ReadKeyParams() (PreparedKeyParams, error) {
+	encryptedVault, err := s.loadEncryptedVault()
+	if err != nil {
+		return PreparedKeyParams{}, err
+	}
+	m := encryptedVault.Metadata
+	return PreparedKeyParams{
+		Version:         m.Version,
+		Salt:            m.Salt,
+		Iterations:      m.Iterations,
+		WrappedDEK:      m.WrappedDEK,
+		WrappedDEKNonce: m.WrappedDEKNonce,
+	}, nil
+}
+
+// DeriveDataKey computes the vault's data-decryption key from the password and
+// pre-read key parameters WITHOUT reading the ciphertext — so it can run
+// concurrently with a sync pull. The expensive PBKDF2 step happens here.
+//   - v1: the password-derived key decrypts the vault directly.
+//   - v2: derive the password KEK, then unwrap the DEK; the DEK decrypts the vault.
+//
+// The returned key is what LoadVaultWithKey expects. Caller must ClearBytes it.
+func (s *StorageService) DeriveDataKey(password string, p PreparedKeyParams) ([]byte, error) {
+	if p.Version == 2 {
+		if len(p.WrappedDEK) != crypto.KeyLength+16 {
+			return nil, fmt.Errorf("invalid v2 vault: wrapped DEK length mismatch (expected %d, got %d)",
+				crypto.KeyLength+16, len(p.WrappedDEK))
+		}
+		if len(p.WrappedDEKNonce) != crypto.NonceLength {
+			return nil, fmt.Errorf("invalid v2 vault: nonce length mismatch")
+		}
+
+		passwordKEK, err := s.cryptoService.DeriveKey([]byte(password), p.Salt, p.Iterations)
+		if err != nil {
+			return nil, fmt.Errorf("failed to derive key: %w", err)
+		}
+		defer s.cryptoService.ClearKey(passwordKEK)
+
+		dek, err := crypto.UnwrapKey(crypto.WrappedKey{Ciphertext: p.WrappedDEK, Nonce: p.WrappedDEKNonce}, passwordKEK)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unwrap DEK (invalid password?): %w", err)
+		}
+		return dek, nil
+	}
+
+	// v1: the password-derived key is the data key.
+	key, err := s.cryptoService.DeriveKey([]byte(password), p.Salt, p.Iterations)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive key: %w", err)
+	}
+	return key, nil
 }
 
 func (s *StorageService) SaveVault(data []byte, password string, callback ProgressCallback) error {
