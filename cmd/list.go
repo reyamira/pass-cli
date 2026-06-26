@@ -16,12 +16,14 @@ import (
 )
 
 var (
-	listFormat    string
-	listUnused    bool
-	listDays      int
-	listByProject bool   // T029: --by-project flag
-	listLocation  string // T042: --location flag (for User Story 3)
-	listRecursive bool   // T043: --recursive flag (for User Story 3)
+	listFormat        string
+	listUnused        bool
+	listDays          int
+	listByProject     bool   // T029: --by-project flag
+	listLocation      string // T042: --location flag (for User Story 3)
+	listRecursive     bool   // T043: --recursive flag (for User Story 3)
+	listShowUsernames bool   // #95: opt the Username column back into the default table
+	listQuiet         bool   // #95: -q/--quiet alias for --format simple
 )
 
 var listCmd = &cobra.Command{
@@ -35,6 +37,15 @@ Output formats:
   json     Output as JSON array
   simple   Simple list of service names only
 
+Safety: the table hides usernames by default. The "username" field can hold
+sensitive values (card, account, or routing numbers stored as a username), so
+listing should not dump them. Pass --show-usernames to include the column.
+(The --format json output is an explicit structured opt-in and still emits the
+full metadata, including usernames.)
+
+The -q/--quiet flag is a shorthand for --format simple: it prints bare service
+names, one per line. -q takes precedence over --format.
+
 The --unused flag filters credentials that haven't been accessed recently
 or have never been accessed. Use --days to configure the threshold
 (default: 30 days).
@@ -44,8 +55,14 @@ showing which credentials are used in which projects.
 
 The --location flag filters credentials accessed from a specific directory.
 Use --recursive to include subdirectories.`,
-	Example: `  # List all credentials as table
+	Example: `  # List all credentials as table (usernames hidden)
   pass-cli list
+
+  # Include the username column (may reveal sensitive values)
+  pass-cli list --show-usernames
+
+  # List bare service names, one per line
+  pass-cli list -q
 
   # List as JSON
   pass-cli list --format json
@@ -78,9 +95,11 @@ func init() {
 	listCmd.Flags().StringVarP(&listFormat, "format", "f", "table", "output format: table, json, simple")
 	listCmd.Flags().BoolVar(&listUnused, "unused", false, "show only unused or rarely used credentials")
 	listCmd.Flags().IntVar(&listDays, "days", 30, "days threshold for --unused flag")
-	listCmd.Flags().BoolVar(&listByProject, "by-project", false, "group credentials by git repository")   // T029
-	listCmd.Flags().StringVar(&listLocation, "location", "", "filter credentials by directory path")      // T042
-	listCmd.Flags().BoolVar(&listRecursive, "recursive", false, "include subdirectories with --location") // T043
+	listCmd.Flags().BoolVar(&listByProject, "by-project", false, "group credentials by git repository")              // T029
+	listCmd.Flags().StringVar(&listLocation, "location", "", "filter credentials by directory path")                 // T042
+	listCmd.Flags().BoolVar(&listRecursive, "recursive", false, "include subdirectories with --location")            // T043
+	listCmd.Flags().BoolVar(&listShowUsernames, "show-usernames", false, "include the username column in the table") // #95
+	listCmd.Flags().BoolVarP(&listQuiet, "quiet", "q", false, "print bare service names only (alias for --format simple)")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
@@ -132,11 +151,14 @@ func runList(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// #95: -q/--quiet is an alias for --format simple and takes precedence.
+	effectiveFormat := resolveListFormat(listFormat, listQuiet)
+
 	// T030-T034: Handle --by-project mode (User Story 2)
 	// T048: Works with --location (filter first, then group)
 	if listByProject {
 		projects := groupCredentialsByProject(metadata)
-		return outputByProject(projects, listFormat)
+		return outputByProject(projects, effectiveFormat)
 	}
 
 	// Standard list mode (existing behavior)
@@ -146,7 +168,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	})
 
 	// Output in requested format
-	switch strings.ToLower(listFormat) {
+	switch strings.ToLower(effectiveFormat) {
 	case "json":
 		return outputJSON(metadata)
 	case "simple":
@@ -154,8 +176,17 @@ func runList(cmd *cobra.Command, args []string) error {
 	case "table":
 		return outputTable(metadata)
 	default:
-		return fmt.Errorf("invalid format: %s (valid: table, json, simple)", listFormat)
+		return fmt.Errorf("invalid format: %s (valid: table, json, simple)", effectiveFormat)
 	}
+}
+
+// resolveListFormat returns the output format to use. #95: -q/--quiet is a
+// shorthand for "simple" and takes precedence over any --format value.
+func resolveListFormat(format string, quiet bool) string {
+	if quiet {
+		return "simple"
+	}
+	return format
 }
 
 func filterUnused(metadata []vault.CredentialMetadata, days int) []vault.CredentialMetadata {
@@ -258,8 +289,16 @@ func outputTable(metadata []vault.CredentialMetadata) error {
 
 	table := tablewriter.NewWriter(os.Stdout)
 
-	// Prepare header
-	header := []string{"Service", "Username", "Usage", "Last Used", "Created"}
+	// Prepare header.
+	// #95: The Username column is omitted by default because that field can hold
+	// sensitive values (e.g. card/account/routing numbers). It is included only
+	// when --show-usernames is set (omitted entirely, not masked).
+	var header []string
+	if listShowUsernames {
+		header = []string{"Service", "Username", "Usage", "Last Used", "Created"}
+	} else {
+		header = []string{"Service", "Usage", "Last Used", "Created"}
+	}
 
 	// Prepare data rows
 	var data [][]string
@@ -281,19 +320,28 @@ func outputTable(metadata []vault.CredentialMetadata) error {
 		// Format created
 		createdStr := formatRelativeTime(meta.CreatedAt)
 
-		// Truncate username if too long
-		username := meta.Username
-		if len(username) > 30 {
-			username = username[:27] + "..."
-		}
+		if listShowUsernames {
+			// Truncate username if too long
+			username := meta.Username
+			if len(username) > 30 {
+				username = username[:27] + "..."
+			}
 
-		data = append(data, []string{
-			meta.Service,
-			username,
-			usageStr,
-			lastUsedStr,
-			createdStr,
-		})
+			data = append(data, []string{
+				meta.Service,
+				username,
+				usageStr,
+				lastUsedStr,
+				createdStr,
+			})
+		} else {
+			data = append(data, []string{
+				meta.Service,
+				usageStr,
+				lastUsedStr,
+				createdStr,
+			})
+		}
 	}
 
 	// Set table configuration
