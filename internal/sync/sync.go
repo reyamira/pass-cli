@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/arimxyer/pass-cli/internal/config"
@@ -45,6 +46,87 @@ type RemoteFileInfo struct {
 	Size    int64     `json:"Size"`
 	ModTime time.Time `json:"ModTime"`
 	IsDir   bool      `json:"IsDir"`
+}
+
+// markerSuffix is appended to a content-hash marker object. The marker is a
+// zero-byte file whose NAME encodes pass-cli's own sha256 of the vault:
+//
+//	<vaultFileName>.<64-hex-sha256><markerSuffix>   e.g. vault.enc.9f3a…e21.synchash
+//
+// It is synced alongside vault.enc (it lives in the vault dir, only .sync-state
+// is excluded), so the single `rclone lsjson` call SmartPull already makes also
+// lists the marker — letting us read the remote's content identity for ZERO
+// extra round-trips. This fixes the (ModTime, Size) false-negative in #102:
+// a same-length, same-modtime remote edit changes the marker name, so it can no
+// longer read as "unchanged".
+const markerSuffix = ".synchash"
+
+// markerFileName builds the marker object name for a vault file + content hash.
+func markerFileName(vaultFileName, hash string) string {
+	return vaultFileName + "." + hash + markerSuffix
+}
+
+// isHex64 reports whether s is exactly 64 lowercase-or-uppercase hex chars
+// (a sha256 hex digest), guarding the marker parse against unrelated files.
+func isHex64(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// parseRemoteMarkerHash scans an rclone lsjson listing for the vault's content
+// marker and returns the embedded sha256. ok is false when no marker is present
+// (legacy remotes, or a device that pushed before markers existed) or when the
+// listing is ambiguous (more than one distinct marker hash — an abnormal,
+// interrupted state) — callers then fall back to the (ModTime, Size) heuristic.
+func parseRemoteMarkerHash(files []RemoteFileInfo, vaultFileName string) (string, bool) {
+	prefix := vaultFileName + "."
+	found := ""
+	for i := range files {
+		name := files[i].Name
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, markerSuffix) {
+			continue
+		}
+		hash := name[len(prefix) : len(name)-len(markerSuffix)]
+		if !isHex64(hash) {
+			continue
+		}
+		if found != "" && found != hash {
+			return "", false // ambiguous — fall back to the heuristic
+		}
+		found = hash
+	}
+	if found == "" {
+		return "", false
+	}
+	return found, true
+}
+
+// writeLocalMarker drops a zero-byte marker named for hash into vaultDir and
+// removes any stale markers for the same vault, so the directory holds exactly
+// one marker. The subsequent `rclone sync` of the dir mirrors that single marker
+// to the remote (deleting the old one there too).
+func writeLocalMarker(vaultDir, vaultFileName, hash string) error {
+	prefix := vaultFileName + "."
+	entries, err := os.ReadDir(vaultDir)
+	if err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, markerSuffix) {
+				_ = os.Remove(filepath.Join(vaultDir, name))
+			}
+		}
+	}
+	markerPath := filepath.Join(vaultDir, markerFileName(vaultFileName, hash))
+	return os.WriteFile(markerPath, nil, 0600)
 }
 
 // Service provides vault synchronization using rclone.
@@ -193,16 +275,35 @@ func (s *Service) SmartPull(vaultPath string) error {
 		state = &SyncState{}
 	}
 
-	// 3. Check if remote is unchanged
-	if remoteVault.ModTime.Equal(state.RemoteModTime) && remoteVault.Size == state.RemoteSize {
+	// 3. Decide whether the remote changed since our last push.
+	//
+	// Prefer the content marker (#102): its name encodes the remote's own
+	// sha256, so a same-size + same-modtime remote edit (which the legacy
+	// heuristic would miss) still reads as changed. Fall back to the
+	// (ModTime, Size) heuristic only when no marker is present (legacy remotes
+	// or a device that pushed before markers existed).
+	//
+	// Limitation: an interrupted remote push that uploaded vault.enc but not the
+	// marker can leave a stale marker == LastPushHash, read here as "unchanged."
+	// The next successful push self-heals the marker; we accept this rare window
+	// in exchange for content-authoritative detection with no extra round-trip
+	// and no false conflicts from modtime noise.
+	remoteHash, hasMarker := parseRemoteMarkerHash(remoteFiles, vaultFileName)
+	var remoteChanged bool
+	if hasMarker {
+		remoteChanged = remoteHash != state.LastPushHash
+	} else {
+		remoteChanged = !remoteVault.ModTime.Equal(state.RemoteModTime) || remoteVault.Size != state.RemoteSize
+	}
+	if !remoteChanged {
 		return nil // Remote unchanged, skip pull
 	}
 
-	// 4. Check for local changes (conflict detection)
+	// 4. Remote changed — if local also diverged from our last push, it's a
+	// conflict (both sides changed). This is content-based on both sides.
 	if _, statErr := os.Stat(vaultPath); statErr == nil {
 		localHash, hashErr := HashFile(vaultPath)
 		if hashErr == nil && state.LastPushHash != "" && localHash != state.LastPushHash {
-			// Local has unpushed changes AND remote has changed = conflict
 			return ErrSyncConflict
 		}
 	}
@@ -264,6 +365,14 @@ func (s *Service) SmartPush(vaultPath string) (bool, error) {
 	// 3. Skip if unchanged
 	if localHash == state.LastPushHash {
 		return false, nil
+	}
+
+	// 3b. Write the content marker (#102) into the vault dir so the rclone sync
+	// below carries it to the remote, where the next device's SmartPull reads our
+	// content hash straight from its name. Best-effort: a marker write failure
+	// degrades change-detection to the legacy heuristic but must not block a push.
+	if err := writeLocalMarker(vaultDir, filepath.Base(vaultPath), localHash); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write sync content marker: %v\n", err)
 	}
 
 	// 4. Push

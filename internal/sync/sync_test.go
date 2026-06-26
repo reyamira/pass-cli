@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -371,5 +372,190 @@ func TestSmartPull_LsjsonFailure(t *testing.T) {
 	// Should not fail - allows offline operation
 	if err := service.SmartPull(vaultPath); err != nil {
 		t.Errorf("SmartPull should allow offline operation, got error: %v", err)
+	}
+}
+
+// --- #102: content-marker tests ---
+
+func hashA() string { return strings.Repeat("a", 64) }
+func hashB() string { return strings.Repeat("b", 64) }
+
+func TestParseRemoteMarkerHash(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    []RemoteFileInfo
+		wantHash string
+		wantOK   bool
+	}{
+		{
+			name: "marker present",
+			files: []RemoteFileInfo{
+				{Name: "vault.enc"},
+				{Name: markerFileName("vault.enc", hashA())},
+			},
+			wantHash: hashA(), wantOK: true,
+		},
+		{
+			name:   "no marker (legacy remote)",
+			files:  []RemoteFileInfo{{Name: "vault.enc"}},
+			wantOK: false,
+		},
+		{
+			name: "ignores backup and non-hex lookalikes",
+			files: []RemoteFileInfo{
+				{Name: "vault.enc"},
+				{Name: "vault.enc.backup"},
+				{Name: "vault.enc.not-a-hash.synchash"}, // wrong length / non-hex
+			},
+			wantOK: false,
+		},
+		{
+			name: "ambiguous (two distinct markers) falls back",
+			files: []RemoteFileInfo{
+				{Name: markerFileName("vault.enc", hashA())},
+				{Name: markerFileName("vault.enc", hashB())},
+			},
+			wantOK: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotHash, gotOK := parseRemoteMarkerHash(tt.files, "vault.enc")
+			if gotOK != tt.wantOK || (tt.wantOK && gotHash != tt.wantHash) {
+				t.Errorf("parseRemoteMarkerHash() = (%q, %v), want (%q, %v)", gotHash, gotOK, tt.wantHash, tt.wantOK)
+			}
+		})
+	}
+}
+
+// THE #102 regression: a remote edit that keeps vault.enc's Size AND ModTime
+// identical (the legacy heuristic's blind spot) must still be detected as
+// changed, because the marker name carries a different content hash. Without the
+// marker this skips the pull (silent stale read; on a write path, silent clobber).
+func TestSmartPull_MarkerCatchesSameSizeSameModtimeEdit(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	localHash, _ := HashFile(vaultPath)
+	sameTime := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+
+	// Local matches last push (no local changes). Recorded remote modtime/size
+	// match what lsjson will report — so the (ModTime, Size) heuristic says
+	// "unchanged" and would skip.
+	_ = SaveState(tmpDir, &SyncState{
+		LastPushHash:  localHash,
+		RemoteModTime: sameTime,
+		RemoteSize:    100,
+	})
+
+	// Remote vault.enc is byte-identical in Size+ModTime, but the marker encodes
+	// a DIFFERENT content hash → remote really changed.
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{
+		{Name: "vault.enc", Size: 100, ModTime: sameTime},
+		{Name: markerFileName("vault.enc", hashB())},
+	})
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+
+	if err := service.SmartPull(vaultPath); err != nil {
+		t.Fatalf("SmartPull returned error: %v", err)
+	}
+	// Must have pulled (sync) despite identical modtime+size.
+	if len(mock.runNoOutCalls) != 1 {
+		t.Errorf("expected 1 sync call (pull) — marker should force detection, got %d", len(mock.runNoOutCalls))
+	}
+}
+
+// The marker is authoritative: when it matches LastPushHash the content is
+// unchanged, so SmartPull must skip even if ModTime/Size differ (modtime noise
+// must not trigger a needless pull or a false conflict).
+func TestSmartPull_MarkerSkipsOnModtimeNoise(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	localHash, _ := HashFile(vaultPath)
+	_ = SaveState(tmpDir, &SyncState{
+		LastPushHash:  localHash,
+		RemoteModTime: time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC),
+		RemoteSize:    100,
+	})
+
+	// vault.enc reports a different modtime+size, but the marker == LastPushHash.
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{
+		{Name: "vault.enc", Size: 999, ModTime: time.Date(2026, 2, 2, 2, 0, 0, 0, time.UTC)},
+		{Name: markerFileName("vault.enc", localHash)},
+	})
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+
+	if err := service.SmartPull(vaultPath); err != nil {
+		t.Fatalf("SmartPull returned error: %v", err)
+	}
+	if len(mock.runNoOutCalls) != 0 {
+		t.Errorf("expected no sync (marker says unchanged), got %d", len(mock.runNoOutCalls))
+	}
+}
+
+// Marker says remote changed AND local diverged from last push → conflict.
+func TestSmartPull_MarkerConflict(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("local-modified"), 0600)
+
+	// Local differs from last push (local changed).
+	_ = SaveState(tmpDir, &SyncState{LastPushHash: hashA()})
+
+	// Remote marker differs from last push (remote changed).
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{
+		{Name: "vault.enc", Size: 200},
+		{Name: markerFileName("vault.enc", hashB())},
+	})
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+
+	if err := service.SmartPull(vaultPath); !errors.Is(err, ErrSyncConflict) {
+		t.Errorf("expected ErrSyncConflict, got: %v", err)
+	}
+	if len(mock.runNoOutCalls) != 0 {
+		t.Errorf("expected no sync on conflict, got %d", len(mock.runNoOutCalls))
+	}
+}
+
+// SmartPush writes exactly one content marker named for the new hash and removes
+// any stale marker from a previous push.
+func TestSmartPush_WritesContentMarker(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	// A stale marker from a previous push that must be cleaned up.
+	staleMarker := filepath.Join(tmpDir, markerFileName("vault.enc", hashA()))
+	_ = os.WriteFile(staleMarker, nil, 0600)
+
+	_ = SaveState(tmpDir, &SyncState{LastPushHash: "old-hash"})
+	mock := &mockExecutor{runOutput: []byte(`[{"Name":"vault.enc","Size":10}]`)}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+
+	if _, err := service.SmartPush(vaultPath); err != nil {
+		t.Fatalf("SmartPush returned error: %v", err)
+	}
+
+	expectedHash, _ := HashFile(vaultPath)
+	wantMarker := markerFileName("vault.enc", expectedHash)
+
+	entries, _ := os.ReadDir(tmpDir)
+	var markers []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), markerSuffix) {
+			markers = append(markers, e.Name())
+		}
+	}
+	if len(markers) != 1 || markers[0] != wantMarker {
+		t.Errorf("expected exactly one marker %q, got %v", wantMarker, markers)
+	}
+	if _, err := os.Stat(staleMarker); !os.IsNotExist(err) {
+		t.Errorf("stale marker should have been removed")
 	}
 }
