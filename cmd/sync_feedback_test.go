@@ -176,6 +176,26 @@ func TestSyncPullBeforeUnlock_FeedbackOnStderr(t *testing.T) {
 	}
 }
 
+// When sync is enabled and not offline, the push shows the "Syncing..." indicator
+// on stderr and nothing on stdout. Mirror of the pull feedback test — locks the
+// normal-path push behavior so a regression in the offline-gate ordering is caught.
+func TestSyncPushAfterCommand_FeedbackOnStderr(t *testing.T) {
+	vs := newVaultServiceForSyncTest(t, true)
+	setOffline(t, false)
+	setVerbose(t, false)
+
+	stdout, stderr := captureOutErr(t, func() {
+		syncPushAfterCommand(vs)
+	})
+
+	if stdout != "" {
+		t.Errorf("expected empty stdout, got %q", stdout)
+	}
+	if !strings.Contains(stderr, "Syncing...") {
+		t.Errorf("expected stderr to contain the syncing indicator, got %q", stderr)
+	}
+}
+
 // When sync is disabled, the pull shows nothing at all — even under verbose.
 func TestSyncPullBeforeUnlock_DisabledNoOutput(t *testing.T) {
 	vs := newVaultServiceForSyncTest(t, false)

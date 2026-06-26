@@ -14,6 +14,7 @@ Available for all commands:
 | Flag | Description | Example |
 |------|-------------|---------|
 | `--verbose` | Enable verbose output | `--verbose` |
+| `--offline` | Skip cloud sync for this command (run fully local) | `--offline` |
 | `--help`, `-h` | Show help | `--help` |
 
 ### Global Flag Examples
@@ -21,6 +22,10 @@ Available for all commands:
 ```bash
 # Enable verbose logging
 pass-cli --verbose get github
+
+# Run fully local — skip the pre-unlock pull and post-command push
+# (useful in CI or tight loops; offline changes sync on the next online run)
+pass-cli --offline get github
 
 # Get help for any command
 pass-cli get --help

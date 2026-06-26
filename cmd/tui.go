@@ -63,10 +63,9 @@ func runTUI(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Smart sync pull before unlock
-	if syncErr := vaultService.SyncPull(); syncErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: sync pull failed: %v\n", syncErr)
-	}
+	// Smart sync pull before unlock. Delegates to the shared helper so the TUI
+	// honors --offline (skip sync entirely) and shows the same feedback as the CLI.
+	syncPullBeforeUnlock(vaultService)
 
 	// Try keychain unlock first
 	err = vaultService.UnlockWithKeychain()
@@ -170,14 +169,11 @@ func launchTUI(vaultService *vault.VaultService) error {
 	// Run application (blocking)
 	runErr := app.Run()
 
-	// Push any changes made during the TUI session (only if writes occurred)
-	if appState.HasWriteOperations() && vaultService.IsSyncEnabled() {
-		fmt.Fprint(os.Stderr, "Syncing...")
-		if vaultService.SyncPush() {
-			fmt.Fprintln(os.Stderr, " done")
-		} else {
-			fmt.Fprint(os.Stderr, "\r\033[K")
-		}
+	// Push any changes made during the TUI session (only if writes occurred).
+	// syncPushAfterCommand handles the --offline gate, the sync-enabled check, and
+	// the "Syncing..." feedback — keeping TUI and CLI push behavior identical.
+	if appState.HasWriteOperations() {
+		syncPushAfterCommand(vaultService)
 	}
 
 	return runErr
