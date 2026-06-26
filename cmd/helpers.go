@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"github.com/arimxyer/pass-cli/internal/crypto"
 	"github.com/arimxyer/pass-cli/internal/recovery"
 	"github.com/arimxyer/pass-cli/internal/vault"
 	"os"
@@ -394,6 +395,82 @@ func unlockVault(vaultService *vault.VaultService) error {
 		return fmt.Errorf("failed to unlock vault: %w", err)
 	}
 
+	return nil
+}
+
+// unlockVaultWithSync pulls from the remote and unlocks, overlapping the network
+// pull with the master-password prompt to hide the pre-unlock probe latency (#103,
+// Tier 1). It replaces the previous sequential `syncPullBeforeUnlock(vs)` +
+// `unlockVault(vs)` pair at command entry points.
+//
+// Ordering constraint: Unlock reads and decrypts vault.enc in one step, and a pull
+// replaces that file — so the decrypt must run strictly AFTER the pull finishes.
+// Only work that does not touch vault.enc may overlap the pull:
+//   - the master-password prompt touches stdin only → safe to overlap (the win);
+//   - keychain unlock decrypts vault.enc, and keychain users have no prompt to hide
+//     behind, so that path stays sequential (Tier 2, overlapping the Argon2 KDF, is
+//     a deferred follow-up).
+func unlockVaultWithSync(vaultService *vault.VaultService) error {
+	// No pull to overlap (sync disabled or --offline): today's exact behavior.
+	if IsOffline() || !vaultService.IsSyncEnabled() {
+		syncPullBeforeUnlock(vaultService) // no-op in these cases
+		return unlockVault(vaultService)
+	}
+
+	// Keychain is resolved BEFORE the pull: retrieving the keychain password reads
+	// metadata + the OS keyring but never decrypts vault.enc. There's no human wait
+	// to hide behind, so pull then decrypt sequentially.
+	if password, err := vaultService.RetrieveKeychainPassword(); err == nil {
+		defer crypto.ClearBytes(password)
+		syncPullBeforeUnlock(vaultService)
+		if err := vaultService.Unlock(password); err != nil {
+			return fmt.Errorf("failed to unlock vault: %w", err)
+		}
+		if IsVerbose() {
+			fmt.Fprintln(os.Stderr, "🔓 Unlocked vault using keychain")
+		}
+		return nil
+	}
+
+	// Password path: run the pull concurrently with the prompt, then join before
+	// decrypting against the now-current file.
+	pullDone := make(chan struct{})
+	var pullErr error
+	go func() {
+		defer close(pullDone)
+		pullErr = vaultService.SyncPull()
+	}()
+
+	if IsVerbose() {
+		// Full line (terminated by newline) so it cannot corrupt the prompt below.
+		fmt.Fprintln(os.Stderr, "🔄 Checking remote for vault changes...")
+	}
+	// No transient "Checking remote..." indicator here: it would garble the prompt
+	// line. The prompt itself signals that work is in flight; the pull runs quietly
+	// in the background and any warnings are re-surfaced cleanly after the join.
+	fmt.Fprint(os.Stderr, "Master password: ")
+	password, readErr := readPassword()
+	defer crypto.ClearBytes(password)
+	fmt.Fprintln(os.Stderr) // newline after password input
+
+	<-pullDone // join on ALL paths before returning, so rclone is never orphaned
+
+	if readErr != nil {
+		return fmt.Errorf("failed to read password: %w", readErr)
+	}
+
+	// Re-surface a sync conflict (or pull error) cleanly below the prompt. SyncPull
+	// may have printed its own warning mid-prompt (garbled), and read commands never
+	// re-echo it (only writes do, via SyncPush) — so a failed signal would be lost.
+	if vaultService.SyncConflictDetected() {
+		fmt.Fprintln(os.Stderr, "Warning: sync conflict — local and remote vault both changed. Use `pass-cli sync resolve` to choose which version to keep.")
+	} else if pullErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: sync pull failed: %v\n", pullErr)
+	}
+
+	if err := vaultService.Unlock(password); err != nil {
+		return fmt.Errorf("failed to unlock vault: %w", err)
+	}
 	return nil
 }
 
