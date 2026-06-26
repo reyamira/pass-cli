@@ -36,7 +36,11 @@ There are two ways to map credentials to environment variables:
   pass-cli exec openai-api -- python train.py   # sets OPENAI_API
 
 The -f/--field flag selects which field to inject (default: password) and
-applies to all --set mappings.
+applies to every mapping. A single mapping can override it with a ':field'
+suffix, which is how you inject two fields of the same entry as separate
+variables (e.g. a database username and password):
+
+  pass-cli exec --set DB_USER=postgres:username --set DB_PASSWORD=postgres:password -- ./run.sh
 
 Everything after '--' is the command to run; pass-cli writes nothing of its
 own to stdout, and the child's exit code is propagated unchanged.
@@ -55,6 +59,9 @@ it is not process isolation.`,
   # Inject a non-password field
   pass-cli exec --set DB_USER=postgres --field username -- ./run-migration.sh
 
+  # Inject two fields of one entry as separate variables (per-mapping field override)
+  pass-cli exec --set DB_USER=postgres:username --set DB_PASSWORD=postgres:password -- ./run-migration.sh
+
   # Convenience form: service name -> env name (openai-api -> OPENAI_API)
   pass-cli exec openai-api -- python train.py`,
 	Args: cobra.ArbitraryArgs,
@@ -63,15 +70,17 @@ it is not process isolation.`,
 
 func init() {
 	rootCmd.AddCommand(execCmd)
-	execCmd.Flags().StringArrayVar(&execSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service (repeatable)")
+	execCmd.Flags().StringArrayVar(&execSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service[:field] (repeatable)")
 	execCmd.Flags().StringVarP(&execField, "field", "f", "password", "field to inject for all mappings (username, password, category, url, notes, service)")
 }
 
 // envMapping pairs a target environment variable name with the credential service
-// whose field value should be injected into it.
+// whose field value should be injected into it. field is the optional per-mapping
+// field override ("" means fall back to the global --field flag).
 type envMapping struct {
 	envName string
 	service string
+	field   string
 }
 
 // parseExecArgs splits the parsed positional args into credential mappings and the
@@ -95,11 +104,17 @@ func parseExecArgs(sets []string, args []string, dashIdx int) (mappings []envMap
 			return nil, nil, fmt.Errorf("cannot combine a positional <service> (%q) with --set; use one form or the other", preDash[0])
 		}
 		for _, s := range sets {
-			name, service, ok := strings.Cut(s, "=")
-			if !ok || name == "" || service == "" {
-				return nil, nil, fmt.Errorf("invalid --set value %q: expected ENV_NAME=service", s)
+			name, spec, ok := strings.Cut(s, "=")
+			if !ok || name == "" || spec == "" {
+				return nil, nil, fmt.Errorf("invalid --set value %q: expected ENV_NAME=service[:field]", s)
 			}
-			mappings = append(mappings, envMapping{envName: name, service: service})
+			// Optional per-mapping field override: service:field. The first ':'
+			// separates the service from the field, so a field always wins when present.
+			service, field, hasField := strings.Cut(spec, ":")
+			if hasField && (service == "" || field == "") {
+				return nil, nil, fmt.Errorf("invalid --set value %q: expected ENV_NAME=service:field", s)
+			}
+			mappings = append(mappings, envMapping{envName: name, service: service, field: field})
 		}
 		return mappings, childArgv, nil
 	}
@@ -192,7 +207,12 @@ func runExec(cmd *cobra.Command, args []string) error {
 	// a hot path don't mutate the vault hash and trigger a sync push every time.
 	extraEnv := make([]string, 0, len(mappings))
 	for _, m := range mappings {
-		entry, err := buildEnvEntry(vaultService, m, execField)
+		// A per-mapping field (--set ENV=service:field) overrides the global --field.
+		field := m.field
+		if field == "" {
+			field = execField
+		}
+		entry, err := buildEnvEntry(vaultService, m, field)
 		if err != nil {
 			return err
 		}

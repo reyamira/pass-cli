@@ -153,6 +153,32 @@ func TestIntegration_Exec_FieldSelection(t *testing.T) {
 	}
 }
 
+// TestIntegration_Exec_PerMappingField verifies that two fields of the SAME entry
+// can be injected as separate variables via the service:field override — the
+// database-credentials case (DB_USER + DB_PASSWORD from one entry) that a single
+// global --field cannot express.
+func TestIntegration_Exec_PerMappingField(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses POSIX sh")
+	}
+
+	configPath, password, service, secret := setupExecVault(t)
+
+	stdin := helpers.BuildUnlockStdin(password)
+	stdout, stderr, err := helpers.RunCmd(t, binaryPath, configPath, stdin,
+		"exec",
+		"--set", "DB_USER="+service+":username",
+		"--set", "DB_PASSWORD="+service+":password",
+		"--", "sh", "-c", `printf '%s:%s' "$DB_USER" "$DB_PASSWORD"`)
+	if err != nil {
+		t.Fatalf("exec failed: %v\nStderr: %s", err, stderr)
+	}
+	want := "execuser:" + secret
+	if strings.TrimSpace(stdout) != want {
+		t.Errorf("per-mapping field: stdout = %q, want %q", strings.TrimSpace(stdout), want)
+	}
+}
+
 // TestIntegration_Exec_MissingDashTerminator verifies a clear error when no "--"
 // separates the command.
 func TestIntegration_Exec_MissingDashTerminator(t *testing.T) {

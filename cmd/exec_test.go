@@ -111,7 +111,7 @@ func TestParseExecArgs(t *testing.T) {
 			sets:         []string{"GITHUB_TOKEN=github"},
 			args:         []string{"gh", "repo", "list"},
 			dashIdx:      0,
-			wantMappings: []envMapping{{"GITHUB_TOKEN", "github"}},
+			wantMappings: []envMapping{{"GITHUB_TOKEN", "github", ""}},
 			wantChild:    []string{"gh", "repo", "list"},
 		},
 		{
@@ -119,7 +119,7 @@ func TestParseExecArgs(t *testing.T) {
 			sets:         []string{"AWS_ACCESS_KEY_ID=aws-id", "AWS_SECRET_ACCESS_KEY=aws-secret"},
 			args:         []string{"aws", "s3", "ls"},
 			dashIdx:      0,
-			wantMappings: []envMapping{{"AWS_ACCESS_KEY_ID", "aws-id"}, {"AWS_SECRET_ACCESS_KEY", "aws-secret"}},
+			wantMappings: []envMapping{{"AWS_ACCESS_KEY_ID", "aws-id", ""}, {"AWS_SECRET_ACCESS_KEY", "aws-secret", ""}},
 			wantChild:    []string{"aws", "s3", "ls"},
 		},
 		{
@@ -127,8 +127,38 @@ func TestParseExecArgs(t *testing.T) {
 			sets:         nil,
 			args:         []string{"openai-api", "python", "train.py"},
 			dashIdx:      1,
-			wantMappings: []envMapping{{"OPENAI_API", "openai-api"}},
+			wantMappings: []envMapping{{"OPENAI_API", "openai-api", ""}},
 			wantChild:    []string{"python", "train.py"},
+		},
+		{
+			name:         "per-mapping field override",
+			sets:         []string{"DB_USER=postgres:username"},
+			args:         []string{"mycmd"},
+			dashIdx:      0,
+			wantMappings: []envMapping{{"DB_USER", "postgres", "username"}},
+			wantChild:    []string{"mycmd"},
+		},
+		{
+			name:         "two fields of one entry as separate vars",
+			sets:         []string{"DB_USER=pg:username", "DB_PASSWORD=pg:password"},
+			args:         []string{"./run.sh"},
+			dashIdx:      0,
+			wantMappings: []envMapping{{"DB_USER", "pg", "username"}, {"DB_PASSWORD", "pg", "password"}},
+			wantChild:    []string{"./run.sh"},
+		},
+		{
+			name:    "empty field after colon",
+			sets:    []string{"K=svc:"},
+			args:    []string{"mycmd"},
+			dashIdx: 0,
+			wantErr: true,
+		},
+		{
+			name:    "empty service before colon",
+			sets:    []string{"K=:username"},
+			args:    []string{"mycmd"},
+			dashIdx: 0,
+			wantErr: true,
 		},
 		{
 			name:    "missing -- terminator",
@@ -224,7 +254,7 @@ func TestExecCmd_ArgsLenAtDash(t *testing.T) {
 		if execErr != nil || parseErr != nil {
 			t.Fatalf("execErr=%v parseErr=%v", execErr, parseErr)
 		}
-		if !equalMappings(mappings, []envMapping{{"K", "svc"}}) {
+		if !equalMappings(mappings, []envMapping{{"K", "svc", ""}}) {
 			t.Errorf("mappings = %v", mappings)
 		}
 		if !equalStrings(child, []string{"mycmd", "arg1"}) {
@@ -237,7 +267,7 @@ func TestExecCmd_ArgsLenAtDash(t *testing.T) {
 		if execErr != nil || parseErr != nil {
 			t.Fatalf("execErr=%v parseErr=%v", execErr, parseErr)
 		}
-		if !equalMappings(mappings, []envMapping{{"SVC", "svc"}}) {
+		if !equalMappings(mappings, []envMapping{{"SVC", "svc", ""}}) {
 			t.Errorf("mappings = %v", mappings)
 		}
 		if !equalStrings(child, []string{"mycmd"}) {
@@ -250,7 +280,7 @@ func TestExecCmd_ArgsLenAtDash(t *testing.T) {
 		if execErr != nil || parseErr != nil {
 			t.Fatalf("execErr=%v parseErr=%v", execErr, parseErr)
 		}
-		if !equalMappings(mappings, []envMapping{{"K", "svc"}}) {
+		if !equalMappings(mappings, []envMapping{{"K", "svc", ""}}) {
 			t.Errorf("mappings = %v", mappings)
 		}
 		if !equalStrings(child, []string{"mycmd", "--child-flag", "v"}) {
