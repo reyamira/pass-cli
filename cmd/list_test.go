@@ -1,40 +1,15 @@
 package cmd
 
 import (
-	"io"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/arimxyer/pass-cli/internal/vault"
 )
 
-// captureStdout redirects os.Stdout for the duration of fn and returns whatever
-// was written. The list output functions write directly to os.Stdout, so this is
-// how we observe them.
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("failed to create pipe: %v", err)
-	}
-	os.Stdout = w
-
-	fn()
-
-	if err := w.Close(); err != nil {
-		t.Fatalf("failed to close pipe writer: %v", err)
-	}
-	os.Stdout = orig
-
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("failed to read captured output: %v", err)
-	}
-	return string(out)
-}
+// captureStdout is defined in exec_test.go (same package) and shared across the
+// cmd test suite; it redirects os.Stdout for the duration of fn and returns what
+// was written, which is how the list output functions are observed here.
 
 func sampleMetadata() []vault.CredentialMetadata {
 	return []vault.CredentialMetadata{
