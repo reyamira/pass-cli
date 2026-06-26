@@ -15,17 +15,15 @@ on:
       - 'CONTRIBUTING.md'
       - 'LICENSE'
       - '.gitignore'
+  # NOTE: no paths-ignore here. The required status checks (Lint, Unit Tests,
+  # Build, Integration Tests) are branch-ruleset requirements, so they must
+  # *report* on every PR or the PR can never merge. The jobs below already
+  # short-circuit to success via "Skip if no code changes" when check-changes
+  # finds no Go/build files, so non-code PRs (docs, skills, .gitignore) still
+  # satisfy the required checks in seconds. A workflow-level paths-ignore would
+  # suppress the whole workflow and leave those PRs blocked forever.
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'specs/**'
-      - '.specify/**'
-      - 'CLAUDE.md'
-      - 'CONTRIBUTING.md'
-      - 'LICENSE'
-      - '.gitignore'
 
 permissions:
   contents: read
