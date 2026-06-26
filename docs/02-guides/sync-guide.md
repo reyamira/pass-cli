@@ -411,6 +411,17 @@ Pass-CLI uses rclone's sync behavior which **overwrites** the destination with t
 - **Pull**: Cloud overwrites local (ensures you have latest)
 - **Push**: Local overwrites cloud (your changes take precedence)
 
+### Change detection
+
+To decide whether the remote actually changed (and avoid needless pulls), pass-cli
+compares its own SHA-256 of the vault content rather than trusting the file's
+modification time and size. On each push it writes a tiny zero-byte marker named
+`vault.enc.<sha256>.synchash` next to `vault.enc` in your remote; the content hash
+is read straight from that filename during the pre-unlock listing, so detection
+costs no extra network round-trip. **You may see this `*.synchash` object in your
+cloud bucket — it is expected and safe to leave alone** (pass-cli replaces it on
+every push). Older vaults without a marker fall back to the modtime+size heuristic.
+
 **To avoid conflicts**:
 1. Always use the same device for a session
 2. Don't run pass-cli simultaneously on multiple devices
