@@ -135,7 +135,10 @@ func (s *Service) Push(vaultDir string) error {
 
 // CheckRemoteMetadata fetches remote file metadata using rclone lsjson.
 func (s *Service) CheckRemoteMetadata() ([]RemoteFileInfo, error) {
-	output, err := s.executor.Run("rclone", "lsjson", s.config.Remote, "--hash")
+	// Note: no "--hash" flag — RemoteFileInfo carries no hash field and no
+	// decision uses a remote hash (skip compares ModTime+Size; conflict detection
+	// uses a local sha256 via HashFile). Requesting it only adds backend cost.
+	output, err := s.executor.Run("rclone", "lsjson", s.config.Remote)
 	if err != nil {
 		return nil, fmt.Errorf("rclone lsjson failed: %w", err)
 	}

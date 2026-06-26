@@ -399,11 +399,40 @@ func unlockVault(vaultService *vault.VaultService) error {
 
 // syncPullBeforeUnlock performs a smart sync pull before vault unlock.
 // This ensures we have the latest version from remote before reading.
+//
+// When --offline is set, the pull is skipped entirely (no network either
+// direction — see syncPushAfterCommand for the matching push skip).
+//
+// When sync is enabled and not offline, the network probe always runs
+// (CheckRemoteMetadata is a round-trip; only the file transfer is conditional),
+// so the user gets feedback that the command is hitting the network:
+//   - verbose: a descriptive message on stderr
+//   - otherwise: a transient indicator on stderr, cleared when the probe returns
+//
+// Nothing is ever written to stdout (it must stay byte-clean for pipes), and
+// nothing is written at all when sync is disabled or --offline is set.
 func syncPullBeforeUnlock(vaultService *vault.VaultService) {
+	if IsOffline() {
+		return
+	}
+	if !vaultService.IsSyncEnabled() {
+		return
+	}
+
 	if IsVerbose() {
 		fmt.Fprintln(os.Stderr, "🔄 Checking remote for vault changes...")
+		if err := vaultService.SyncPull(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: sync pull failed: %v\n", err)
+		}
+		return
 	}
-	if err := vaultService.SyncPull(); err != nil {
+
+	// Transient progress indicator on stderr, cleared with carriage-return +
+	// ANSI erase-to-end-of-line (same technique as syncPushAfterCommand).
+	fmt.Fprint(os.Stderr, "Checking remote...")
+	err := vaultService.SyncPull()
+	fmt.Fprint(os.Stderr, "\r\033[K")
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: sync pull failed: %v\n", err)
 	}
 }
@@ -411,7 +440,16 @@ func syncPullBeforeUnlock(vaultService *vault.VaultService) {
 // syncPushAfterCommand performs a smart sync push after a command completes.
 // This ensures local changes are pushed to remote once per command, not per-save.
 // Shows "Syncing... done" feedback on stderr when a push actually occurs.
+//
+// When --offline is set, the push is skipped entirely. This is a correctness
+// requirement, not just an optimization: SmartPush has no independent
+// remote-conflict check — its only safety is that SmartPull ran first. If
+// --offline skipped the pull but still pushed, a write could blind-overwrite a
+// newer remote (silent cross-device data loss). So --offline means fully local.
 func syncPushAfterCommand(vaultService *vault.VaultService) {
+	if IsOffline() {
+		return
+	}
 	if !vaultService.IsSyncEnabled() {
 		return
 	}

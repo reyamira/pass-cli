@@ -81,7 +81,7 @@ mise run gh <args>            # GitHub CLI operations
 - `SmartPush` hashes local file, skips network if hash matches `LastPushHash` in `.sync-state`
 - `SmartPull` runs before unlock, `SmartPush` runs after command completes (synchronous, blocks prompt)
 - `RecordFieldAccess` (called by `get`) writes usage timestamps, changing vault hash and triggering push
-- Two network round-trips per push: `rclone sync` + `rclone lsjson --hash`
+- Two network round-trips per push: `rclone sync` + `rclone lsjson`
 - Async push risks: silent failures, false conflicts (kill between push and SaveState), partial uploads on some backends
 
 ## Environment Setup
