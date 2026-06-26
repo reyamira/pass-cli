@@ -696,54 +696,75 @@ func (v *VaultService) Unlock(masterPassword []byte) error {
 		return nil // Already unlocked
 	}
 
-	// T036e: Check for incomplete migration (vault.tmp exists)
-	vaultTmpPath := v.vaultPath + storage.TempSuffix
-	vaultBackupPath := v.vaultPath + storage.BackupSuffix
-
-	if _, err := os.Stat(vaultTmpPath); err == nil {
-		// T036g: Incomplete migration detected - inform user with actionable message
-		fmt.Fprintf(os.Stderr, "\n*** MIGRATION FAILURE DETECTED ***\n")
-		fmt.Fprintf(os.Stderr, "An incomplete vault migration was found (power loss or system crash).\n")
-
-		if _, err := os.Stat(vaultBackupPath); err == nil {
-			// Backup exists - restore it
-			fmt.Fprintf(os.Stderr, "Attempting automatic recovery from backup...\n")
-
-			// Read backup
-			backupData, err := os.ReadFile(vaultBackupPath) // #nosec G304 -- Vault backup path validated by storage layer
-			if err != nil {
-				return fmt.Errorf("failed to read backup for rollback: %w", err)
-			}
-
-			// Restore to main vault path
-			if err := os.WriteFile(v.vaultPath, backupData, storage.VaultPermissions); err != nil {
-				return fmt.Errorf("failed to restore backup: %w", err)
-			}
-
-			// Remove incomplete temp file
-			_ = os.Remove(vaultTmpPath)
-
-			fmt.Fprintf(os.Stderr, "SUCCESS: Vault restored from backup. Your data is safe.\n")
-			fmt.Fprintf(os.Stderr, "You may continue using the vault normally.\n\n")
-		} else {
-			// No backup available - just remove temp file and warn
-			fmt.Fprintf(os.Stderr, "WARNING: No backup file found. Cleaning up temporary files.\n")
-			_ = os.Remove(vaultTmpPath)
-			fmt.Fprintf(os.Stderr, "If you experience issues, please report this immediately.\n\n")
-		}
+	if err := v.handleIncompleteMigration(); err != nil {
+		return err
 	}
 
-	// Convert to string for storage service (TODO: Phase 4 will update storage.go to accept []byte)
-	masterPasswordStr := string(masterPassword)
-
-	// Try to load vault
-	data, err := v.storageService.LoadVault(masterPasswordStr)
+	// Load + decrypt the vault (derives the key from the password — the
+	// expensive PBKDF2 step happens inside LoadVault).
+	data, err := v.storageService.LoadVault(string(masterPassword))
 	if err != nil {
 		// T068: Log unlock failure (FR-019)
 		v.LogAudit(security.EventVaultUnlock, security.OutcomeFailure, "")
 		return fmt.Errorf("failed to unlock vault: %w", err)
 	}
 
+	return v.finishUnlock(data, masterPassword)
+}
+
+// handleIncompleteMigration auto-recovers from an interrupted vault migration
+// (a leftover vault.tmp): restores from backup if present, otherwise cleans up
+// the temp file with a warning. No-op when no incomplete migration is detected.
+// T036e/T036g.
+func (v *VaultService) handleIncompleteMigration() error {
+	vaultTmpPath := v.vaultPath + storage.TempSuffix
+	vaultBackupPath := v.vaultPath + storage.BackupSuffix
+
+	if _, err := os.Stat(vaultTmpPath); err != nil {
+		return nil // no incomplete migration
+	}
+
+	// T036g: Incomplete migration detected - inform user with actionable message
+	fmt.Fprintf(os.Stderr, "\n*** MIGRATION FAILURE DETECTED ***\n")
+	fmt.Fprintf(os.Stderr, "An incomplete vault migration was found (power loss or system crash).\n")
+
+	if _, err := os.Stat(vaultBackupPath); err == nil {
+		// Backup exists - restore it
+		fmt.Fprintf(os.Stderr, "Attempting automatic recovery from backup...\n")
+
+		// Read backup
+		backupData, err := os.ReadFile(vaultBackupPath) // #nosec G304 -- Vault backup path validated by storage layer
+		if err != nil {
+			return fmt.Errorf("failed to read backup for rollback: %w", err)
+		}
+
+		// Restore to main vault path
+		if err := os.WriteFile(v.vaultPath, backupData, storage.VaultPermissions); err != nil {
+			return fmt.Errorf("failed to restore backup: %w", err)
+		}
+
+		// Remove incomplete temp file
+		_ = os.Remove(vaultTmpPath)
+
+		fmt.Fprintf(os.Stderr, "SUCCESS: Vault restored from backup. Your data is safe.\n")
+		fmt.Fprintf(os.Stderr, "You may continue using the vault normally.\n\n")
+	} else {
+		// No backup available - just remove temp file and warn
+		fmt.Fprintf(os.Stderr, "WARNING: No backup file found. Cleaning up temporary files.\n")
+		_ = os.Remove(vaultTmpPath)
+		fmt.Fprintf(os.Stderr, "If you experience issues, please report this immediately.\n\n")
+	}
+	return nil
+}
+
+// finishUnlock completes an unlock once the plaintext vault data is in hand,
+// independent of HOW it was decrypted (password path via Unlock, or prepared-key
+// path via UnlockWithPreparedKey). It sets in-memory state — including a copy of
+// masterPassword for later saves (NOT recoveryDEK; that distinction is why the
+// recovery-oriented UnlockWithKey can't be reused for keychain unlock) — restores
+// audit logging, synchronizes metadata, removes the post-migration backup, and
+// logs success.
+func (v *VaultService) finishUnlock(data []byte, masterPassword []byte) error {
 	// Unmarshal vault data
 	var vaultData VaultData
 	if err := json.Unmarshal(data, &vaultData); err != nil {
