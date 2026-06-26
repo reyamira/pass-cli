@@ -197,6 +197,37 @@ func TestSmartPush_PushesWhenChanged(t *testing.T) {
 	}
 }
 
+// --- CheckRemoteMetadata tests ---
+
+func TestCheckRemoteMetadata_DoesNotRequestHash(t *testing.T) {
+	// lsjson must NOT pass "--hash": RemoteFileInfo has no hash field and no
+	// decision uses a remote hash, so requesting it only adds backend cost.
+	mock := &mockExecutor{runOutput: []byte("[]")}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+
+	if _, err := service.CheckRemoteMetadata(); err != nil {
+		t.Fatalf("CheckRemoteMetadata returned error: %v", err)
+	}
+
+	if len(mock.runCalls) != 1 {
+		t.Fatalf("expected 1 Run call (lsjson), got %d", len(mock.runCalls))
+	}
+
+	args := mock.runCalls[0]
+	foundLsjson := false
+	for _, arg := range args {
+		if arg == "--hash" {
+			t.Errorf("lsjson must not pass --hash, got args %v", args)
+		}
+		if arg == "lsjson" {
+			foundLsjson = true
+		}
+	}
+	if !foundLsjson {
+		t.Errorf("expected lsjson in args, got %v", args)
+	}
+}
+
 // --- SmartPull tests ---
 
 func TestSmartPull_Disabled(t *testing.T) {

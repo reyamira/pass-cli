@@ -431,6 +431,22 @@ pass-cli add service --username user --password pass
 
 Your local vault is updated successfully. Changes sync on next successful push.
 
+### Skipping sync explicitly with `--offline`
+
+When you *know* you're offline — or you just want to avoid the network round-trip
+(e.g. in CI or a tight scripted loop) — pass the global `--offline` flag:
+
+```bash
+pass-cli --offline get github      # no pre-unlock pull, no post-command push
+pass-cli --offline list -q
+```
+
+`--offline` makes the command **fully local in both directions**: it skips the
+pre-unlock pull *and* the post-command push. Skipping only the pull would be
+unsafe — the push has no independent remote-conflict check, so it could blind-
+overwrite a newer remote — which is why `--offline` disables both. Any local
+changes you make offline simply aren't propagated until the next online run.
+
 ## Troubleshooting
 
 ### Sync Not Working

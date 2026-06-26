@@ -16,6 +16,7 @@ import (
 var (
 	cfgFile string
 	verbose bool
+	offline bool
 
 	// Version information (set via ldflags during build)
 	version = "dev"
@@ -91,9 +92,11 @@ Original error: %w`, os.Getenv("HOME"), err)
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.pass-cli/config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolVar(&offline, "offline", false, "skip cloud sync for this command (run fully local; offline changes won't sync until the next online run)")
 
 	// Bind flags to viper
 	_ = viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	_ = viper.BindPFlag("offline", rootCmd.PersistentFlags().Lookup("offline"))
 
 	// Configure command groups for better help organization
 	rootCmd.AddGroup(
@@ -234,6 +237,13 @@ func GetVaultPathWithSource() (path string, source string) {
 // IsVerbose returns whether verbose mode is enabled
 func IsVerbose() bool {
 	return verbose || viper.GetBool("verbose")
+}
+
+// IsOffline returns whether offline mode is enabled. When true, both the
+// pre-unlock pull and the post-command push are skipped so the command runs
+// fully local. Offline changes will not sync until the next online run.
+func IsOffline() bool {
+	return offline || viper.GetBool("offline")
 }
 
 // runRootCommand runs when pass-cli is invoked with no subcommand
