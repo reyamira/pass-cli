@@ -45,7 +45,7 @@ Thumbs.db
 *.log
 
 # Tool directories (keep local only)
-.claude/skills
+# Note: .claude/skills is intentionally tracked so agent skills ship with the repo.
 .claude/settings.local.json
 .claude/hookify.*.local.md
 .serena/
