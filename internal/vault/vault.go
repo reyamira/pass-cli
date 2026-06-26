@@ -948,6 +948,78 @@ func (v *VaultService) UnlockWithKey(vaultKey []byte) error {
 	return nil
 }
 
+// PreparedUnlock holds key-derivation parameters captured before a sync pull so
+// the expensive PBKDF2 derivation can overlap the pull (#103 Tier 2). It is
+// produced by PrepareUnlock, derives the data key via DeriveDataKey (safe to run
+// while a pull is in flight), and is consumed by UnlockWithPreparedKey.
+type PreparedUnlock struct {
+	storageService *storage.StorageService
+	params         storage.PreparedKeyParams
+}
+
+// PrepareUnlock reads the current key-derivation parameters (cheap, pre-pull).
+// Call this before kicking off SyncPull, then run DeriveDataKey concurrently with
+// the pull, then UnlockWithPreparedKey after the join.
+func (v *VaultService) PrepareUnlock() (*PreparedUnlock, error) {
+	params, err := v.storageService.ReadKeyParams()
+	if err != nil {
+		return nil, err
+	}
+	return &PreparedUnlock{storageService: v.storageService, params: params}, nil
+}
+
+// DeriveDataKey runs the expensive PBKDF2 derivation against the captured
+// parameters (no file access) — safe to call while a sync pull is in flight.
+// The returned key is handed to UnlockWithPreparedKey, which clears it.
+func (p *PreparedUnlock) DeriveDataKey(password []byte) ([]byte, error) {
+	return p.storageService.DeriveDataKey(string(password), p.params)
+}
+
+// UnlockWithPreparedKey completes a keychain unlock using dataKey derived ahead
+// of time (concurrently with a sync pull). If the vault was re-keyed since the
+// parameters were captured — a password change or re-key on another device that a
+// just-completed pull brought in — the prepared key is stale. That is detected by
+// comparing the current on-disk key parameters against the captured ones; on a
+// mismatch it falls back to a full password unlock, making this path behave
+// identically to a sequential keychain unlock in that edge (e.g. a stale-keychain
+// password fails cleanly at unlock rather than unlocking then breaking saves).
+// A decrypt failure is a belt-and-suspenders second fallback. masterPassword and
+// dataKey are cleared before returning.
+func (v *VaultService) UnlockWithPreparedKey(prep *PreparedUnlock, dataKey, masterPassword []byte) error {
+	defer crypto.ClearBytes(masterPassword)
+	defer crypto.ClearBytes(dataKey)
+
+	if v.unlocked {
+		return nil // Already unlocked
+	}
+
+	if err := v.handleIncompleteMigration(); err != nil {
+		return err
+	}
+
+	// Re-read params from the (possibly pulled) file. If they differ from what we
+	// derived against, the prepared key is stale → full re-derive against current
+	// params, keeping behavior identical to a sequential unlock on any re-key.
+	current, err := v.storageService.ReadKeyParams()
+	preparedKeyUsable := err == nil && prep != nil && prep.params.Equal(current)
+
+	if preparedKeyUsable {
+		if data, decErr := v.storageService.LoadVaultWithKey(dataKey); decErr == nil {
+			return v.finishUnlock(data, masterPassword)
+		}
+		// Belt-and-suspenders: params matched but decrypt unexpectedly failed —
+		// fall through to the password path rather than failing the unlock.
+	}
+
+	// Fallback: full password unlock (re-derives against current params).
+	data, err := v.storageService.LoadVault(string(masterPassword))
+	if err != nil {
+		v.LogAudit(security.EventVaultUnlock, security.OutcomeFailure, "")
+		return fmt.Errorf("failed to unlock vault: %w", err)
+	}
+	return v.finishUnlock(data, masterPassword)
+}
+
 // UnlockWithKeychain attempts to unlock using keychain-stored password
 func (v *VaultService) UnlockWithKeychain() error {
 	password, err := v.RetrieveKeychainPassword()
