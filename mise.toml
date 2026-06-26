@@ -1,0 +1,51 @@
+[tools]
+go = "1.25"
+
+# Task runner for pass-cli. These mirror the commands CI runs (see
+# .github/workflows/ci.yml) so the workflow documented in CLAUDE.md works as
+# written on a fresh clone. Run `mise tasks` to list, `mise run <name>` to invoke.
+
+[tasks.fmt]
+description = "Format Go source"
+run = "gofmt -w ."
+
+[tasks.fmt-check]
+description = "Check formatting (fails if any file needs gofmt)"
+run = """
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+  echo "These files need gofmt:"; echo "$unformatted"; exit 1
+fi
+"""
+
+[tasks.vet]
+description = "Run go vet"
+run = "go vet ./..."
+
+[tasks.lint]
+description = "Run golangci-lint (matches CI args)"
+run = "golangci-lint run --timeout=3m --build-tags integration"
+
+[tasks.test]
+description = "Run unit tests"
+run = "go test ./..."
+
+[tasks."test:integration"]
+description = "Run integration tests (build tag: integration)"
+run = "go test -tags=integration -timeout 4m ./test/integration"
+
+[tasks."test:all"]
+description = "Run unit + integration tests"
+depends = ["test", "test:integration"]
+
+[tasks.build]
+description = "Build the pass-cli binary"
+run = "go build -o pass-cli ."
+
+[tasks.git]
+description = "Run git (passthrough; e.g. mise run git status)"
+run = "git"
+
+[tasks.gh]
+description = "Run gh / GitHub CLI (passthrough; e.g. mise run gh pr list)"
+run = "gh"

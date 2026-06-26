@@ -22,6 +22,8 @@ go.work.sum
 # Build output
 dist/
 build/
+# Local binary produced by `mise run build` / `go build -o pass-cli .`
+/pass-cli
 
 # IDE files
 .vscode/
@@ -54,7 +56,10 @@ Thumbs.db
 .spec-workflow/approvals/
 .github/prompts/
 .spec-workflow/
-mise.toml
+# Note: mise.toml is intentionally tracked so the `mise run …` tasks documented
+# in CLAUDE.md work on a fresh clone (issue #100). Use mise.local.toml for
+# machine-local overrides — that stays untracked.
+mise.local.toml
 
 # Development notes (keep local only)
 n-n-o-*.md
