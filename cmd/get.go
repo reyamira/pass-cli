@@ -141,31 +141,10 @@ func runGet(cmd *cobra.Command, args []string) error {
 }
 
 func outputQuietMode(cred *vault.Credential, vaultService *vault.VaultService, service string) error {
-	field := strings.ToLower(getField)
-	var value string
-	var fieldName string
-
-	switch field {
-	case "username", "user", "u":
-		value = cred.Username
-		fieldName = "username"
-	case "password", "pass", "p":
-		value = string(cred.Password) // T020d: Convert []byte to string
-		fieldName = "password"
-	case "category", "cat", "c":
-		value = cred.Category
-		fieldName = "category"
-	case "url":
-		value = cred.URL
-		fieldName = "url"
-	case "notes", "note", "n":
-		value = cred.Notes
-		fieldName = "notes"
-	case "service", "s":
-		value = cred.Service
-		fieldName = "service"
-	default:
-		return fmt.Errorf("invalid field: %s (valid: username, password, category, url, notes, service)", getField)
+	// Shared field resolver keeps the valid-field list in sync with `exec`.
+	value, fieldName, err := resolveCredentialField(cred, getField)
+	if err != nil {
+		return err
 	}
 
 	// Track field access
