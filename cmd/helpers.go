@@ -406,10 +406,10 @@ func unlockVault(vaultService *vault.VaultService) error {
 // Ordering constraint: Unlock reads and decrypts vault.enc in one step, and a pull
 // replaces that file — so the decrypt must run strictly AFTER the pull finishes.
 // Only work that does not touch vault.enc may overlap the pull:
-//   - the master-password prompt touches stdin only → safe to overlap (the win);
-//   - keychain unlock decrypts vault.enc, and keychain users have no prompt to hide
-//     behind, so that path stays sequential (Tier 2, overlapping the Argon2 KDF, is
-//     a deferred follow-up).
+//   - the master-password prompt touches stdin only → safe to overlap (Tier 1);
+//   - keychain unlock decrypts vault.enc, but its expensive PBKDF2 key DERIVATION
+//     touches only the password + pre-read key params, so it overlaps the pull and
+//     we decrypt after the join (Tier 2).
 func unlockVaultWithSync(vaultService *vault.VaultService) error {
 	// No pull to overlap (sync disabled or --offline): today's exact behavior.
 	if IsOffline() || !vaultService.IsSyncEnabled() {
@@ -417,19 +417,14 @@ func unlockVaultWithSync(vaultService *vault.VaultService) error {
 		return unlockVault(vaultService)
 	}
 
-	// Keychain is resolved BEFORE the pull: retrieving the keychain password reads
-	// metadata + the OS keyring but never decrypts vault.enc. There's no human wait
-	// to hide behind, so pull then decrypt sequentially.
+	// Keychain path (Tier 2): retrieving the keychain password reads metadata + the
+	// OS keyring but never decrypts vault.enc. Read the key-derivation params first
+	// (cheap, pre-pull), then overlap the expensive PBKDF2 derivation with the pull,
+	// join, and unlock with the prepared key (which re-derives if the pull brought a
+	// re-keyed vault).
 	if password, err := vaultService.RetrieveKeychainPassword(); err == nil {
 		defer crypto.ClearBytes(password)
-		syncPullBeforeUnlock(vaultService)
-		if err := vaultService.Unlock(password); err != nil {
-			return fmt.Errorf("failed to unlock vault: %w", err)
-		}
-		if IsVerbose() {
-			fmt.Fprintln(os.Stderr, "🔓 Unlocked vault using keychain")
-		}
-		return nil
+		return unlockKeychainOverlappingPull(vaultService, password)
 	}
 
 	// Password path: run the pull concurrently with the prompt, then join before
@@ -470,6 +465,62 @@ func unlockVaultWithSync(vaultService *vault.VaultService) error {
 
 	if err := vaultService.Unlock(password); err != nil {
 		return fmt.Errorf("failed to unlock vault: %w", err)
+	}
+	return nil
+}
+
+// unlockKeychainOverlappingPull runs the keychain unlock (#103 Tier 2): it reads
+// the vault's key-derivation params, starts the sync pull in a goroutine, derives
+// the data key (the expensive PBKDF2 step) on this goroutine so it overlaps the
+// pull, joins, then unlocks with the prepared key — which itself falls back to a
+// full password unlock if the pull brought a re-keyed vault. The caller owns
+// (and clears) password.
+func unlockKeychainOverlappingPull(vaultService *vault.VaultService, password []byte) error {
+	prep, prepErr := vaultService.PrepareUnlock()
+	if prepErr != nil {
+		// Couldn't read key params → fall back to a sequential keychain unlock.
+		syncPullBeforeUnlock(vaultService)
+		if err := vaultService.Unlock(append([]byte(nil), password...)); err != nil {
+			return fmt.Errorf("failed to unlock vault: %w", err)
+		}
+		if IsVerbose() {
+			fmt.Fprintln(os.Stderr, "🔓 Unlocked vault using keychain")
+		}
+		return nil
+	}
+
+	pullDone := make(chan struct{})
+	go func() {
+		defer close(pullDone)
+		_ = vaultService.SyncPull()
+	}()
+
+	// A transient indicator is safe here — no password prompt to corrupt.
+	if IsVerbose() {
+		fmt.Fprintln(os.Stderr, "🔄 Checking remote for vault changes...")
+	} else {
+		fmt.Fprint(os.Stderr, "Checking remote...")
+	}
+	dataKey, deriveErr := prep.DeriveDataKey(password) // PBKDF2 overlaps the pull
+	<-pullDone                                         // join before any decrypt
+	if !IsVerbose() {
+		fmt.Fprint(os.Stderr, "\r\033[K")
+	}
+
+	if vaultService.SyncConflictDetected() {
+		fmt.Fprintln(os.Stderr, "Warning: sync conflict — local and remote vault both changed. Use `pass-cli sync resolve` to choose which version to keep.")
+	}
+
+	if deriveErr != nil {
+		// Derivation failed (e.g. malformed header) → full password unlock.
+		if err := vaultService.Unlock(append([]byte(nil), password...)); err != nil {
+			return fmt.Errorf("failed to unlock vault: %w", err)
+		}
+	} else if err := vaultService.UnlockWithPreparedKey(prep, dataKey, append([]byte(nil), password...)); err != nil {
+		return err
+	}
+	if IsVerbose() {
+		fmt.Fprintln(os.Stderr, "🔓 Unlocked vault using keychain")
 	}
 	return nil
 }

@@ -80,3 +80,52 @@ func TestUnlockVaultWithSync_PasswordBranchConcurrent(t *testing.T) {
 		t.Error("expected vault to be unlocked after the concurrent password branch")
 	}
 }
+
+// Tier 2: unlockKeychainOverlappingPull runs the pull (goroutine) concurrently
+// with the PBKDF2 derivation (main), joins, then unlocks with the prepared key.
+// Driving it directly with the password (the value a keychain Retrieve would
+// return) exercises the full overlap under `go test -race` without needing a
+// keychain backend. Asserts a correct unlock and that masterPassword was retained
+// (a subsequent save works).
+func TestUnlockKeychainOverlappingPull_Concurrent(t *testing.T) {
+	const masterPassword = "TestPass!1234"
+
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	cfgPath := filepath.Join(tmpDir, "config.yml")
+
+	cfg := "vault_path: " + vaultPath + "\nsync:\n  enabled: true\n  remote: \"mock-remote:bucket\"\n"
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	t.Setenv("PASS_CLI_CONFIG", cfgPath)
+
+	initVS, err := vault.New(vaultPath)
+	if err != nil {
+		t.Fatalf("vault.New (init): %v", err)
+	}
+	if err := initVS.Initialize([]byte(masterPassword), false, "", ""); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	vs, err := vault.New(vaultPath)
+	if err != nil {
+		t.Fatalf("vault.New (locked): %v", err)
+	}
+	if !vs.IsSyncEnabled() {
+		t.Fatal("expected sync enabled")
+	}
+
+	setOffline(t, false)
+	setVerbose(t, false)
+
+	if err := unlockKeychainOverlappingPull(vs, []byte(masterPassword)); err != nil {
+		t.Fatalf("unlockKeychainOverlappingPull: %v", err)
+	}
+	if !vs.IsUnlocked() {
+		t.Fatal("expected vault unlocked after Tier 2 overlap")
+	}
+	if err := vs.AddCredential("svc", "user", []byte("secret"), "", "", ""); err != nil {
+		t.Errorf("AddCredential failed (masterPassword not retained?): %v", err)
+	}
+}
