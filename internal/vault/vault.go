@@ -228,6 +228,14 @@ func (v *VaultService) IsSyncEnabled() bool {
 	return v.syncService != nil && v.syncService.IsEnabled()
 }
 
+// SyncConflictDetected reports whether the most recent SyncPull detected a
+// conflict (both local and remote changed). Used by the concurrent-unlock path
+// to re-surface the conflict cleanly after the password prompt, since SyncPull's
+// own warning may print mid-prompt and read commands never re-echo it (#103).
+func (v *VaultService) SyncConflictDetected() bool {
+	return v.syncConflictDetected
+}
+
 // SyncPush performs a smart sync push if sync is enabled.
 // Should be called once at the end of a command, not per-save.
 // Returns true if a push was actually performed.
@@ -921,14 +929,30 @@ func (v *VaultService) UnlockWithKey(vaultKey []byte) error {
 
 // UnlockWithKeychain attempts to unlock using keychain-stored password
 func (v *VaultService) UnlockWithKeychain() error {
+	password, err := v.RetrieveKeychainPassword()
+	if err != nil {
+		return err
+	}
+	return v.Unlock(password)
+}
+
+// RetrieveKeychainPassword returns the master password from the OS keychain
+// without decrypting the vault. It reads metadata and the keyring (and performs
+// best-effort migration from a legacy global entry) but never touches the
+// vault.enc ciphertext — so callers may run it concurrently with a sync pull
+// that replaces vault.enc, then decrypt with the returned password afterwards
+// (see the concurrent-unlock path in cmd, #103). Returns ErrKeychainNotEnabled
+// when keychain unlock is not configured. The caller owns the returned bytes and
+// must crypto.ClearBytes them.
+func (v *VaultService) RetrieveKeychainPassword() ([]byte, error) {
 	// T018: Check metadata to see if keychain is enabled (FR-007)
 	metadata, err := v.LoadMetadata()
 	if err != nil {
-		return fmt.Errorf("failed to load metadata: %w", err)
+		return nil, fmt.Errorf("failed to load metadata: %w", err)
 	}
 
 	if !metadata.KeychainEnabled {
-		return ErrKeychainNotEnabled
+		return nil, ErrKeychainNotEnabled
 	}
 
 	// Attempt to retrieve password from vault-specific keychain entry
@@ -954,10 +978,10 @@ func (v *VaultService) UnlockWithKeychain() error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to retrieve password from keychain: %w", err)
+		return nil, fmt.Errorf("failed to retrieve password from keychain: %w", err)
 	}
 
-	return v.Unlock([]byte(password))
+	return []byte(password), nil
 }
 
 // Lock clears in-memory credentials and password
