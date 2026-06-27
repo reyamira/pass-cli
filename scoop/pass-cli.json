@@ -1,29 +1,29 @@
 {
   "version": "0.8.51",
   "description": "Secure CLI password manager with AES-256-GCM encryption",
-  "homepage": "https://github.com/arimxyer/pass-cli",
+  "homepage": "https://github.com/reyamira/pass-cli",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_amd64.zip",
+      "url": "https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_amd64.zip",
       "hash": "REPLACE_WITH_ACTUAL_SHA256_FOR_WINDOWS_AMD64"
     },
     "arm64": {
-      "url": "https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_arm64.zip",
+      "url": "https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_windows_arm64.zip",
       "hash": "REPLACE_WITH_ACTUAL_SHA256_FOR_WINDOWS_ARM64"
     }
   },
   "bin": "pass-cli.exe",
   "checkver": {
-    "github": "https://github.com/arimxyer/pass-cli"
+    "github": "https://github.com/reyamira/pass-cli"
   },
   "autoupdate": {
     "architecture": {
       "64bit": {
-        "url": "https://github.com/arimxyer/pass-cli/releases/download/v$version/pass-cli_$version_windows_amd64.zip"
+        "url": "https://github.com/reyamira/pass-cli/releases/download/v$version/pass-cli_$version_windows_amd64.zip"
       },
       "arm64": {
-        "url": "https://github.com/arimxyer/pass-cli/releases/download/v$version/pass-cli_$version_windows_arm64.zip"
+        "url": "https://github.com/reyamira/pass-cli/releases/download/v$version/pass-cli_$version_windows_arm64.zip"
       }
     },
     "hash": {
@@ -42,7 +42,7 @@
     "Write-Host '  pass-cli doctor   - Run health checks'",
     "Write-Host ''",
     "Write-Host 'Your vault will be stored at: ~\\.pass-cli\\vault.enc' -ForegroundColor Cyan",
-    "Write-Host 'Complete guide: https://github.com/arimxyer/pass-cli/blob/main/docs/GETTING_STARTED.md'"
+    "Write-Host 'Complete guide: https://github.com/reyamira/pass-cli/blob/main/docs/GETTING_STARTED.md'"
   ],
   "notes": [
     "Pass-CLI: Secure password manager with TUI and CLI interfaces",
@@ -62,6 +62,6 @@
     "  pass-cli keychain enable - Enable auto-unlock",
     "  pass-cli doctor          - Verify vault health",
     "",
-    "Documentation: https://github.com/arimxyer/pass-cli/blob/main/docs/GETTING_STARTED.md"
+    "Documentation: https://github.com/reyamira/pass-cli/blob/main/docs/GETTING_STARTED.md"
   ]
 }

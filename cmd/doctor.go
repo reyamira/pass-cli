@@ -71,7 +71,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// Build check options
 	opts := health.CheckOptions{
 		CurrentVersion:  version,
-		GitHubRepo:      "arimxyer/pass-cli",
+		GitHubRepo:      "reyamira/pass-cli",
 		VaultPath:       vaultPath,
 		VaultPathSource: vaultSource,
 		VaultDir:        filepath.Dir(vaultPath),

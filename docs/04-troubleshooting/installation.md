@@ -5,7 +5,7 @@ toc: true
 ---
 Solutions for installation and initialization problems.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 ## Installation Issues
 
@@ -83,8 +83,8 @@ brew update
 brew doctor
 
 # Remove and re-add tap
-brew untap arimxyer/pass-cli
-brew tap arimxyer/pass-cli
+brew untap reyamira/pass-cli
+brew tap reyamira/pass-cli
 
 # Try verbose installation
 brew install --verbose pass-cli
@@ -109,7 +109,7 @@ scoop status
 
 # Remove and re-add bucket
 scoop bucket rm pass-cli
-scoop bucket add pass-cli https://github.com/arimxyer/scoop-bucket
+scoop bucket add pass-cli https://github.com/reyamira/scoop-bucket
 
 # Clear cache and retry
 scoop cache rm pass-cli
@@ -142,7 +142,7 @@ xattr -d com.apple.quarantine /usr/local/bin/pass-cli
 
 **Option 3: Build from source** (trusted)
 ```bash
-git clone https://github.com/arimxyer/pass-cli
+git clone https://github.com/reyamira/pass-cli
 cd pass-cli
 go build -o pass-cli .
 sudo mv pass-cli /usr/local/bin/

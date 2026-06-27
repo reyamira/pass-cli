@@ -119,7 +119,7 @@ jobs:
           fi
 
           # Check for absolute GitHub links to own repo (should be relative)
-          if grep -r "https://github.com/arimxyer/pass-cli/blob/main/docs" docs/ --include="*.md"; then
+          if grep -r "https://github.com/reyamira/pass-cli/blob/main/docs" docs/ --include="*.md"; then
             echo "⚠️ Warning: Found absolute GitHub links (use relative paths instead)"
           fi
 

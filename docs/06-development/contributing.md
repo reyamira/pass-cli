@@ -5,7 +5,7 @@ toc: true
 ---
 This guide covers the development workflow for Pass-CLI contributors.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 
 ## Prerequisites
@@ -26,7 +26,7 @@ This guide covers the development workflow for Pass-CLI contributors.
 
 ```bash
 # Clone the repository
-git clone https://github.com/arimxyer/pass-cli.git
+git clone https://github.com/reyamira/pass-cli.git
 cd pass-cli
 
 # Install dependencies
@@ -463,12 +463,12 @@ Contributions are welcome! Please:
 4. Run all tests and quality checks (see "Before Committing" section)
 5. Submit a pull request
 
-For questions or discussions, visit [GitHub Discussions](https://github.com/arimxyer/pass-cli/discussions).
+For questions or discussions, visit [GitHub Discussions](https://github.com/reyamira/pass-cli/discussions).
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/arimxyer/pass-cli/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/arimxyer/pass-cli/discussions)
+- **Issues**: [GitHub Issues](https://github.com/reyamira/pass-cli/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/reyamira/pass-cli/discussions)
 - **Documentation**: [docs/](../_index.md)
 
 ## Resources

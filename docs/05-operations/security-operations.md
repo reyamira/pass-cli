@@ -244,7 +244,7 @@ Pass-CLI has not yet undergone external security audit. We welcome security rese
 **DO NOT** file public issues for security vulnerabilities.
 
 Instead, use GitHub's private security advisory feature to report vulnerabilities:
-- Visit: https://github.com/arimxyer/pass-cli/security/advisories/new
+- Visit: https://github.com/reyamira/pass-cli/security/advisories/new
 - Include: Detailed description, reproduction steps, impact assessment
 - Disclosure: Coordinated disclosure after fix
 
@@ -258,7 +258,7 @@ Security updates are released as:
 Check for updates:
 ```bash
 pass-cli version
-# Compare with latest: https://github.com/arimxyer/pass-cli/releases
+# Compare with latest: https://github.com/reyamira/pass-cli/releases
 ```
 
 ## Cryptographic Algorithm Details

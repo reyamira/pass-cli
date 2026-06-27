@@ -322,10 +322,10 @@ Remote path: gdrive:.pass-cli
 
 ```bash
 # macOS
-brew tap arimxyer/homebrew-tap && brew install pass-cli rclone
+brew tap reyamira/homebrew-tap && brew install pass-cli rclone
 
 # Windows
-scoop bucket add arimxyer https://github.com/arimxyer/scoop-bucket
+scoop bucket add reyamira https://github.com/reyamira/scoop-bucket
 scoop install pass-cli rclone
 
 # Linux

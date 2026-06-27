@@ -1,4 +1,4 @@
-baseURL: https://arimxyer.github.io/pass-cli/
+baseURL: https://reyamira.github.io/pass-cli/
 languageCode: en-us
 title: PASS-CLI
 
@@ -38,7 +38,7 @@ menu:
       params:
         type: search
     - name: GitHub
-      url: https://github.com/arimxyer/pass-cli
+      url: https://github.com/reyamira/pass-cli
       weight: 1
       params:
         icon: github
