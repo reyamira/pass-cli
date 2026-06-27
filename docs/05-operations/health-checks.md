@@ -5,7 +5,7 @@ toc: true
 ---
 The `pass-cli doctor` command provides comprehensive health checks for your pass-cli installation. Use it to diagnose issues, verify your setup, and ensure everything is working correctly.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 .
 
 ## Overview
@@ -144,7 +144,7 @@ esac
 **Symptom**:
 ```text
 ⚠ Version: Update available: v1.2.3 → v1.2.4
-  Recommendation: Update to latest version: https://github.com/arimxyer/pass-cli/releases/tag/v1.2.4
+  Recommendation: Update to latest version: https://github.com/reyamira/pass-cli/releases/tag/v1.2.4
 ```
 
 **Solution**: Update pass-cli to the latest version using your package manager or download from GitHub.

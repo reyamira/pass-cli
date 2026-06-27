@@ -5,7 +5,7 @@ toc: true
 ---
 This document describes the automated CI/CD pipeline for Pass-CLI.
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 
 ## Workflows
@@ -294,10 +294,10 @@ goreleaser release --snapshot --clean --skip=publish
 Add to README.md:
 
 ```markdown
-[![CI](https://github.com/arimxyer/pass-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/arimxyer/pass-cli/actions/workflows/ci.yml)
-[![Release](https://github.com/arimxyer/pass-cli/actions/workflows/release.yml/badge.svg)](https://github.com/arimxyer/pass-cli/actions/workflows/release.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/arimxyer/pass-cli)](https://goreportcard.com/report/github.com/arimxyer/pass-cli)
-[![codecov](https://codecov.io/gh/arimxyer/pass-cli/branch/main/graph/badge.svg)](https://codecov.io/gh/arimxyer/pass-cli)
+[![CI](https://github.com/reyamira/pass-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/reyamira/pass-cli/actions/workflows/ci.yml)
+[![Release](https://github.com/reyamira/pass-cli/actions/workflows/release.yml/badge.svg)](https://github.com/reyamira/pass-cli/actions/workflows/release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/reyamira/pass-cli)](https://goreportcard.com/report/github.com/reyamira/pass-cli)
+[![codecov](https://codecov.io/gh/reyamira/pass-cli/branch/main/graph/badge.svg)](https://codecov.io/gh/reyamira/pass-cli)
 ```
 
 ## Security

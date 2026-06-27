@@ -8,7 +8,7 @@ cascade:
 
 ![pass-cli](/images/social-preview.svg)
 
-![Version](https://img.shields.io/github/v/release/arimxyer/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/arimxyer/pass-cli?path=docs&label=Last%20Updated)
+![Version](https://img.shields.io/github/v/release/reyamira/pass-cli?label=Version) ![Last Updated](https://img.shields.io/github/last-commit/reyamira/pass-cli?path=docs&label=Last%20Updated)
 
 Welcome to the **pass-cli** documentation. A secure, cross-platform, always-free, and open-source alternative to 1password, bitwarden, etc., Password and API key manager for folks who live in the command line. (CLI + TUI)
 
@@ -37,8 +37,8 @@ Welcome to the **pass-cli** documentation. A secure, cross-platform, always-free
 
 ## Getting Help
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/arimxyer/pass-cli/issues)
-- **GitHub Discussions**: [Ask questions and share ideas](https://github.com/arimxyer/pass-cli/discussions)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/reyamira/pass-cli/issues)
+- **GitHub Discussions**: [Ask questions and share ideas](https://github.com/reyamira/pass-cli/discussions)
 - **Documentation**: You're reading it!
 
 ## Contributing

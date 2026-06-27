@@ -17,7 +17,7 @@ After the release is built, update `pass-cli.yaml` with the actual SHA256 hashes
 ```powershell
 # Get checksums from the GitHub release checksums.txt file
 # Replace VERSION with actual release version
-curl -L https://github.com/arimxyer/pass-cli/releases/download/vVERSION/checksums.txt
+curl -L https://github.com/reyamira/pass-cli/releases/download/vVERSION/checksums.txt
 ```
 
 Replace `PLACEHOLDER_HASH_AMD64` and `PLACEHOLDER_HASH_ARM64` with the actual SHA256 values.

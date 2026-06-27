@@ -119,12 +119,12 @@ func runKeychainStatus(cmd *cobra.Command, args []string) error {
 		} else if meta != nil && !meta.KeychainEnabled {
 			fmt.Printf("✓ Vault Configuration:    Keychain not enabled\n\n")
 			fmt.Println("System keychain is not accessible. You will be prompted for password on each command.")
-			fmt.Println("See documentation for keychain setup: https://github.com/arimxyer/pass-cli/blob/main/docs/GETTING_STARTED.md#keychain-integration")
+			fmt.Println("See documentation for keychain setup: https://github.com/reyamira/pass-cli/blob/main/docs/GETTING_STARTED.md#keychain-integration")
 		} else {
 			// No metadata - legacy vault
 			fmt.Println()
 			fmt.Println("System keychain is not accessible. You will be prompted for password on each command.")
-			fmt.Println("See documentation for keychain setup: https://github.com/arimxyer/pass-cli/blob/main/docs/GETTING_STARTED.md#keychain-integration")
+			fmt.Println("See documentation for keychain setup: https://github.com/reyamira/pass-cli/blob/main/docs/GETTING_STARTED.md#keychain-integration")
 		}
 	}
 

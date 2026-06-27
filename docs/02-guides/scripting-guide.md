@@ -290,7 +290,7 @@ $env:PASS_CLI_VERBOSE = "1"
 pass-cli get github
 ```
 
-**Note**: To use a custom vault location, configure `vault_path` in the config file (`~/.pass-cli/config.yml`) instead of using environment variables. See [Configuration](#configuration) section.
+**Note**: To use a custom vault location, configure `vault_path` in the config file (`~/.pass-cli/config.yml`) instead of using environment variables. See the [Configuration reference](../03-reference/configuration.md).
 
 ## Best Practices
 

@@ -11,12 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **`exec` command — inject credentials as environment variables** (#98) — `pass-cli exec` runs a child command with stored credentials passed only through its environment, so the secret never touches a file, the clipboard, or shell history. Supports an explicit, repeatable `--set ENV_NAME=service[:field]` mapping and a convenience form (`pass-cli exec <service> -- <cmd>`) that derives the env name from the service (uppercased, non-alphanumeric → `_`, e.g. `openai-api` → `OPENAI_API`). The `-f/--field` flag selects the field for all mappings (default `password`); a per-mapping `:field` suffix overrides it, allowing two fields of one entry to be injected as separate variables. Everything after `--` is the child argv, and the child's exit code is propagated unchanged. `exec` is read-only: it records no usage and triggers no sync push, making it safe on a hot path.
+- **`--offline` global flag** (#104) — run a command fully local: skips both the pre-unlock remote pull and the post-command push (offline changes sync on the next online run).
 
 ### Changed
 - **`list` is now safe-by-default** (#95, #97) — the default table hides the Username column, because the "username" field can hold sensitive values (card, account, or routing numbers stored as a username). New `--show-usernames` re-adds the column, and new `-q/--quiet` is a shorthand for `--format simple` (bare service names, one per line) that takes precedence over `--format`. `--format json` is unchanged and still emits full metadata including usernames as an explicit, structured opt-in.
 - **Sync: content-hash change detection** (#102) — push change-detection now uses a name-encoded zero-byte marker (`vault.enc.<sha256>.synchash`) written next to the vault on each push, replacing the old modtime+size heuristic; older vaults without a marker fall back to the previous behavior.
 - **Sync: lower unlock latency by overlapping the pull** (#103) — the pre-unlock remote pull now runs concurrently with the master-password prompt (Tier 1, #109) and with PBKDF2-SHA256 key derivation on keychain unlock (Tier 2, #110). Internal only; no flag or UX change.
-- **Sync: cut sync-related startup latency** (#104) — removed the dead `--hash` flag and the "Syncing… done" feedback line. The global `--offline` flag is unaffected and still works.
+- **Sync: cut sync-related startup latency** (#104) — dropped the dead `rclone lsjson --hash` flag (no decision used the remote hash; it only added backend hashing cost) and added a transient progress indicator on stderr during the pre-unlock remote probe.
+- **Org transfer to `reyamira`** (#112) — the repository and its package sources (Homebrew tap, Scoop bucket, GitHub Pages, badges) moved from `arimxyer` to `reyamira`. Install commands now reference `reyamira/...` (old URLs redirect). The Go module path (`github.com/arimxyer/pass-cli`) is intentionally unchanged.
 
 ### Fixed
 - **Test: resolve `captureStdout` redeclaration across `cmd` test files** (#99)
@@ -478,4 +480,4 @@ This changelog follows these principles:
 - **Fixed** for any bug fixes
 - **Security** for vulnerability fixes
 
-For detailed commit-level changes, see [GitHub Releases](https://github.com/arimxyer/pass-cli/releases).
+For detailed commit-level changes, see [GitHub Releases](https://github.com/reyamira/pass-cli/releases).

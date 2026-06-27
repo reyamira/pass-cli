@@ -15,7 +15,7 @@ Complete instructions for removing pass-cli from your system.
 brew uninstall pass-cli
 
 # Remove tap (optional)
-brew untap arimxyer/homebrew-tap
+brew untap reyamira/homebrew-tap
 
 # Remove vault (if desired)
 rm -rf ~/.pass-cli
@@ -110,14 +110,14 @@ history -c
 If you encounter issues not covered here:
 
 1. Check the [Troubleshooting Guide](../04-troubleshooting/_index)
-2. Review [GitHub Issues](https://github.com/arimxyer/pass-cli/issues)
-3. Ask in [GitHub Discussions](https://github.com/arimxyer/pass-cli/discussions)
-4. File a [new issue](https://github.com/arimxyer/pass-cli/issues/new)
+2. Review [GitHub Issues](https://github.com/reyamira/pass-cli/issues)
+3. Ask in [GitHub Discussions](https://github.com/reyamira/pass-cli/discussions)
+4. File a [new issue](https://github.com/reyamira/pass-cli/issues/new)
 
 ## Next Steps
 
 After uninstalling, you might want to:
 
 - Review the [Security Architecture](../03-reference/security-architecture)
-- Check [pass-cli Documentation](https://arimxyer.github.io/pass-cli/) for other topics
+- Check [pass-cli Documentation](https://reyamira.github.io/pass-cli/) for other topics
 

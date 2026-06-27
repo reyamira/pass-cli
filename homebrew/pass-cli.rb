@@ -1,27 +1,27 @@
 class PassCli < Formula
   desc "Secure CLI password manager with AES-256-GCM encryption"
-  homepage "https://github.com/arimxyer/pass-cli"
+  homepage "https://github.com/reyamira/pass-cli"
   version "0.8.51"
   license "MIT"
 
   on_macos do
     on_intel do
-      url "https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_darwin_amd64.tar.gz"
+      url "https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_darwin_amd64.tar.gz"
       sha256 "REPLACE_WITH_ACTUAL_SHA256_FOR_DARWIN_AMD64"
     end
     on_arm do
-      url "https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_darwin_arm64.tar.gz"
+      url "https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_darwin_arm64.tar.gz"
       sha256 "REPLACE_WITH_ACTUAL_SHA256_FOR_DARWIN_ARM64"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_linux_amd64.tar.gz"
+      url "https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_linux_amd64.tar.gz"
       sha256 "REPLACE_WITH_ACTUAL_SHA256_FOR_LINUX_AMD64"
     end
     on_arm do
-      url "https://github.com/arimxyer/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_linux_arm64.tar.gz"
+      url "https://github.com/reyamira/pass-cli/releases/download/v0.0.1/pass-cli_0.0.1_linux_arm64.tar.gz"
       sha256 "REPLACE_WITH_ACTUAL_SHA256_FOR_LINUX_ARM64"
     end
   end
@@ -54,7 +54,7 @@ class PassCli < Formula
         • Usage tracking and audit logging
 
       Vault location: ~/.pass-cli/vault.enc
-      Complete guide: https://github.com/arimxyer/pass-cli/blob/main/docs/GETTING_STARTED.md
+      Complete guide: https://github.com/reyamira/pass-cli/blob/main/docs/GETTING_STARTED.md
     EOS
   end
 

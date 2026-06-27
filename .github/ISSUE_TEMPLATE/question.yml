@@ -8,8 +8,8 @@ body:
         Have a question? We're happy to help!
 
         **Note:** For general usage questions, also check:
-        - [README](https://github.com/arimxyer/pass-cli#readme)
-        - [Documentation](https://arimxyer.github.io/pass-cli/)
+        - [README](https://github.com/reyamira/pass-cli#readme)
+        - [Documentation](https://reyamira.github.io/pass-cli/)
 
   - type: textarea
     id: question
