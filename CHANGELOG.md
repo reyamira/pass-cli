@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-06-26
+
+### Added
+- **`exec` command — inject credentials as environment variables** (#98) — `pass-cli exec` runs a child command with stored credentials passed only through its environment, so the secret never touches a file, the clipboard, or shell history. Supports an explicit, repeatable `--set ENV_NAME=service[:field]` mapping and a convenience form (`pass-cli exec <service> -- <cmd>`) that derives the env name from the service (uppercased, non-alphanumeric → `_`, e.g. `openai-api` → `OPENAI_API`). The `-f/--field` flag selects the field for all mappings (default `password`); a per-mapping `:field` suffix overrides it, allowing two fields of one entry to be injected as separate variables. Everything after `--` is the child argv, and the child's exit code is propagated unchanged. `exec` is read-only: it records no usage and triggers no sync push, making it safe on a hot path.
+
+### Changed
+- **`list` is now safe-by-default** (#95, #97) — the default table hides the Username column, because the "username" field can hold sensitive values (card, account, or routing numbers stored as a username). New `--show-usernames` re-adds the column, and new `-q/--quiet` is a shorthand for `--format simple` (bare service names, one per line) that takes precedence over `--format`. `--format json` is unchanged and still emits full metadata including usernames as an explicit, structured opt-in.
+- **Sync: content-hash change detection** (#102) — push change-detection now uses a name-encoded zero-byte marker (`vault.enc.<sha256>.synchash`) written next to the vault on each push, replacing the old modtime+size heuristic; older vaults without a marker fall back to the previous behavior.
+- **Sync: lower unlock latency by overlapping the pull** (#103) — the pre-unlock remote pull now runs concurrently with the master-password prompt (Tier 1, #109) and with PBKDF2-SHA256 key derivation on keychain unlock (Tier 2, #110). Internal only; no flag or UX change.
+- **Sync: cut sync-related startup latency** (#104) — removed the dead `--hash` flag and the "Syncing… done" feedback line. The global `--offline` flag is unaffected and still works.
+
+### Fixed
+- **Test: resolve `captureStdout` redeclaration across `cmd` test files** (#99)
+
+### Infrastructure
+- **Tracked `mise.toml`** (#100) — `mise.toml` is now committed so the documented `mise run …` tasks work on a fresh clone (previously gitignored).
+- **CI runs on all PRs** (#105) — required status checks now report for non-code-change PRs as well.
+- **pass-cli agent skill** (#101) — added an agent skill under `.claude/skills` and tracked the directory.
+
 ## [0.17.2] - 2026-01-31
 
 ### Changed
