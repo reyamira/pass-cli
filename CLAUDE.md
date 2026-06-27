@@ -79,7 +79,9 @@ mise run gh <args>            # GitHub CLI operations
 
 - Vault is a single encrypted file — all pushes/pulls transfer one file regardless of change count
 - `SmartPush` hashes local file, skips network if hash matches `LastPushHash` in `.sync-state`
+- Change detection is content-hash based (#102): each push writes a zero-byte marker `vault.enc.<sha256>.synchash` next to the vault; `SmartPull` reads the hash from the marker name in the `rclone lsjson` listing it already fetches (no extra round trip), replacing the old modtime+size heuristic — markerless older vaults fall back to it
 - `SmartPull` runs before unlock, `SmartPush` runs after command completes (synchronous, blocks prompt)
+- The pre-unlock pull overlaps unlock work (#103): the master-password prompt (Tier 1) and, on keychain unlock, the PBKDF2 key derivation (Tier 2) run concurrently with the pull, which joins before decrypt — see `cmd/helpers.go`
 - `RecordFieldAccess` (called by `get`) writes usage timestamps, changing vault hash and triggering push
 - Two network round-trips per push: `rclone sync` + `rclone lsjson`
 - Async push risks: silent failures, false conflicts (kill between push and SaveState), partial uploads on some backends

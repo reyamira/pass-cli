@@ -61,8 +61,15 @@ pass-cli add github
 # Retrieve a credential
 pass-cli get github
 
-# List all credentials
+# List all credentials (usernames hidden by default; -q for bare names)
 pass-cli list
+
+# Run a command with a credential injected as an environment variable
+# (the secret never touches a file, the clipboard, or your shell history)
+pass-cli exec --set GITHUB_TOKEN=github -- gh repo list
+
+# Convenience form: derive the env name from the service (github -> GITHUB)
+pass-cli exec github -- gh repo list
 
 # Use in scripts (quiet mode)
 export API_KEY=$(pass-cli get myservice --quiet --field password)
@@ -109,8 +116,17 @@ pass-cli get github
 # Get credential (script-friendly)
 pass-cli get github --quiet --field password
 
-# List all credentials
+# Run a command with a credential injected as an env var (never hits disk/clipboard)
+pass-cli exec --set GITHUB_TOKEN=github -- gh repo list
+
+# List all credentials (table hides usernames by default)
 pass-cli list
+
+# List bare service names, one per line
+pass-cli list -q
+
+# List including the username column (may reveal sensitive values)
+pass-cli list --show-usernames
 
 # Update credential
 pass-cli update github --username newuser@example.com

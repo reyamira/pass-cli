@@ -391,6 +391,109 @@ $ pass-cli get github --totp
 
 ---
 
+### exec - Run a Command with Injected Credentials
+
+Run a child command with stored credentials injected as environment variables.
+
+#### Synopsis
+
+```bash
+pass-cli exec [<service>] -- <command> [args...]
+```
+
+#### Description
+
+`exec` runs a child command with stored credentials injected as **environment variables**. The secret value is passed only through the child process's environment — it never touches a file, the clipboard, or your shell history.
+
+Everything after the `--` separator is the command to run. There **must** be a `--` and a command after it. pass-cli writes nothing of its own to stdout, and the child's exit code is **propagated unchanged**.
+
+`exec` is read-only: it does **not** record usage (no usage tracking) and does **not** trigger a sync push, so repeated invocations on a hot path (or inside an agent) don't mutate the vault on every run.
+
+#### Mapping Forms
+
+There are two ways to map credentials to environment variables:
+
+**Explicit mapping (`--set`, repeatable):**
+
+```bash
+# --set ENV_NAME=service[:field]
+pass-cli exec --set GITHUB_TOKEN=github -- gh repo list
+```
+
+**Convenience form (derive the env name from the service):**
+
+The env name is derived from the service name by uppercasing it and replacing every non-alphanumeric character with `_`. For example, `openai-api` becomes `OPENAI_API`.
+
+```bash
+pass-cli exec openai-api -- python train.py   # sets OPENAI_API
+```
+
+The positional `<service>` form and `--set` are mutually exclusive — use one or the other.
+
+#### Field Selection
+
+The `-f`/`--field` flag selects which field to inject (default: `password`) and applies to **all** mappings. Valid fields:
+
+- `username`
+- `password`
+- `category`
+- `url`
+- `notes`
+- `service`
+
+A single mapping can override the global field with a `:field` suffix (`--set ENV=service:field`). The per-mapping `:field` always wins over `--field`. This is how you inject two fields of the **same** entry as separate variables (for example, a database username and password):
+
+```bash
+pass-cli exec \
+  --set DB_USER=postgres:username \
+  --set DB_PASSWORD=postgres:password \
+  -- ./run.sh
+```
+
+#### Flags
+
+| Flag | Short | Type | Description |
+|------|-------|------|-------------|
+| `--set` | | string (repeatable) | Map an environment variable to a credential: `ENV_NAME=service[:field]` |
+| `--field` | `-f` | string | Field to inject for all mappings (default: `password`); per-mapping `:field` overrides it |
+
+#### Examples
+
+```bash
+# Inject a password as GITHUB_TOKEN and run gh
+pass-cli exec --set GITHUB_TOKEN=github -- gh repo list
+
+# Multiple credentials at once
+pass-cli exec \
+  --set AWS_ACCESS_KEY_ID=aws-id \
+  --set AWS_SECRET_ACCESS_KEY=aws-secret \
+  -- aws s3 ls
+
+# Inject a non-password field for all mappings
+pass-cli exec --set DB_USER=postgres --field username -- ./run-migration.sh
+
+# Inject two fields of one entry as separate variables (per-mapping override)
+pass-cli exec \
+  --set DB_USER=postgres:username \
+  --set DB_PASSWORD=postgres:password \
+  -- ./run-migration.sh
+
+# Convenience form: service name -> env name (openai-api -> OPENAI_API)
+pass-cli exec openai-api -- python train.py
+```
+
+#### Security Note
+
+The injected value lives in the **child process's environment**. On Linux it is readable via `/proc/<pid>/environ` by the same user, and it is inherited by descendant processes. This is the same model as `op run` and `aws-vault exec` — far safer than files, clipboards, or shell history, but it is **not** process isolation.
+
+#### Notes
+
+- A `--` separator and a command after it are **required**.
+- The child's exit code is propagated unchanged; pass-cli writes nothing to stdout itself.
+- **Sync**: Read-only — does not record usage and does not trigger a sync push (even with sync enabled).
+
+---
+
 ### list - List Credentials
 
 List all credentials in the vault.
@@ -406,19 +509,33 @@ pass-cli list [flags]
 | Flag | Type | Description |
 |------|------|-------------|
 | `--format`, `-f` | string | Output format: table, json, simple (default: table) |
+| `--show-usernames` | bool | Include the Username column in the table (hidden by default) |
+| `--quiet`, `-q` | bool | Print bare service names only (alias for `--format simple`; takes precedence over `--format`) |
 | `--unused` | bool | Show only unused credentials |
 | `--days` | int | Days threshold for unused (default: 30) |
 | `--by-project` | bool | Group credentials by git repository |
 | `--location` | string | Filter credentials by directory path |
 | `--recursive` | bool | Include subdirectories with --location |
 
+#### Username Safety (Default)
+
+By default, the table output **hides the Username column**. The `username` field can hold sensitive values (card, account, or routing numbers stored as a username), so a broad `list` should not dump them. Pass `--show-usernames` to add the column back (it is omitted entirely, not masked).
+
+The `--format json` output is unchanged: it is an explicit, structured opt-in and still emits the full metadata, **including usernames**.
+
 #### Examples
 
 ```bash
-# List all credentials (table format)
+# List all credentials (table format, usernames hidden)
 pass-cli list
 
-# List as JSON
+# Include the username column (may reveal sensitive values)
+pass-cli list --show-usernames
+
+# List bare service names, one per line
+pass-cli list -q
+
+# List as JSON (includes usernames)
 pass-cli list --format json
 
 # Simple list (service names only)
@@ -448,18 +565,29 @@ pass-cli list --location ~/work --by-project --recursive
 
 #### Output Examples
 
-**Table format (default):**
+**Table format (default — usernames hidden):**
 ```text
-+----------+----------------------+---------------------+
-| SERVICE  | USERNAME             | LAST ACCESSED       |
-+----------+----------------------+---------------------+
-| github   | user@example.com     | 2025-01-20 14:22    |
-| aws-prod | admin@company.com    | 2025-01-18 09:15    |
-| database | dbuser               | 2025-01-15 16:30    |
-+----------+----------------------+---------------------+
++----------+-----------+---------------------+---------------------+
+| SERVICE  | USAGE     | LAST USED           | CREATED             |
++----------+-----------+---------------------+---------------------+
+| github   | 12 (2 loc)| 2 hours ago         | 3 months ago        |
+| aws-prod | 5         | 2 days ago          | 6 months ago        |
+| database | Never     | Never               | 1 month ago         |
++----------+-----------+---------------------+---------------------+
 ```
 
-**Simple format:**
+**Table format with `--show-usernames`:**
+```text
++----------+----------------------+-----------+---------------------+---------------------+
+| SERVICE  | USERNAME             | USAGE     | LAST USED           | CREATED             |
++----------+----------------------+-----------+---------------------+---------------------+
+| github   | user@example.com     | 12 (2 loc)| 2 hours ago         | 3 months ago        |
+| aws-prod | admin@company.com    | 5         | 2 days ago          | 6 months ago        |
+| database | dbuser               | Never     | Never               | 1 month ago         |
++----------+----------------------+-----------+---------------------+---------------------+
+```
+
+**Simple format (also `-q`/`--quiet`):**
 ```text
 github
 aws-prod
@@ -469,6 +597,9 @@ database
 #### Notes
 
 - Passwords are never shown in list output
+- Usernames are hidden in the table by default; use `--show-usernames` to include them (the `username` field can hold sensitive values)
+- `--format json` still includes usernames (explicit structured opt-in)
+- `-q`/`--quiet` is shorthand for `--format simple` and takes precedence over `--format`
 - Table format is best for human viewing
 - JSON format is best for parsing
 - Simple format is best for shell scripts
