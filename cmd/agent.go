@@ -77,11 +77,38 @@ var agentStatusCmd = &cobra.Command{
 	},
 }
 
+// agentServeCmd is an explicit alias for the foreground behavior of bare
+// `pass-cli agent`. Pair it with `&`, or use `agent start` to background it.
+var agentServeCmd = &cobra.Command{
+	Use:   "serve",
+	Short: "Run the agent in the foreground (same as bare `pass-cli agent`)",
+	Long: `Serve runs the agent in the FOREGROUND, blocking until it locks or is stopped.
+Background it with a shell '&', or use 'pass-cli agent start' to daemonize it.`,
+	Args: cobra.NoArgs,
+	RunE: runAgent,
+}
+
+// agentStartCmd daemonizes: it spawns a detached `agent serve` and returns once
+// the agent is unlocked and listening — the ergonomic replacement for `agent &`.
+var agentStartCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start the agent in the background (unlock once, then detach)",
+	Long: `Start launches the agent as a background process and returns as soon as it is
+unlocked and listening — no shell '&' needed. The one-time unlock happens on your
+terminal (a prompt, or silently via the keychain); after that the agent runs
+detached and survives closing the terminal. Stop it with 'pass-cli agent stop'
+(or 'pass-cli lock').`,
+	Args: cobra.NoArgs,
+	RunE: runAgentStart,
+}
+
 func init() {
 	rootCmd.AddCommand(agentCmd)
-	agentCmd.AddCommand(agentStopCmd, agentStatusCmd)
-	agentCmd.Flags().DurationVar(&agentIdleTimeout, "idle", 15*time.Minute, "lock the vault after this much inactivity (0 = never)")
-	agentCmd.Flags().DurationVar(&agentMaxTTL, "max-ttl", 8*time.Hour, "hard cap on how long the vault stays unlocked (0 = no cap)")
+	agentCmd.AddCommand(agentStopCmd, agentStatusCmd, agentServeCmd, agentStartCmd)
+	// Persistent so `agent`, `agent serve`, and `agent start` all accept them
+	// (and `start` forwards them to the serve process it spawns).
+	agentCmd.PersistentFlags().DurationVar(&agentIdleTimeout, "idle", 15*time.Minute, "lock the vault after this much inactivity (0 = never)")
+	agentCmd.PersistentFlags().DurationVar(&agentMaxTTL, "max-ttl", 8*time.Hour, "hard cap on how long the vault stays unlocked (0 = no cap)")
 }
 
 func runAgent(cmd *cobra.Command, _ []string) error {

@@ -10,12 +10,23 @@ dependency.
 ## Running on demand
 
 ```sh
-pass-cli agent &                                  # unlock once, serve in background
+pass-cli agent start                              # unlock once, then background itself
 pass-cli exec --set GITHUB_TOKEN=github -- gh repo list   # resolves via the agent
 pass-cli agent status                             # unlocked? idle? max-ttl left?
-pass-cli lock                                     # lock without stopping the process
-pass-cli agent stop                               # lock and exit
+pass-cli agent lock                               # zero secrets and stop the agent
+pass-cli agent stop                               # same: lock and exit
 ```
+
+`agent start` launches the agent in the **background** and returns as soon as it is
+unlocked and listening — no shell `&` needed. The one-time unlock happens on your
+terminal (a prompt, or silently via the keychain); afterwards the agent runs
+detached and survives closing the terminal. To run it in the **foreground** instead
+(e.g. under a supervisor), use `pass-cli agent serve` (or bare `pass-cli agent`) and
+background it yourself with `&`.
+
+`agent lock`, the top-level `pass-cli lock`, and `agent stop` all zero the resident
+secrets and stop the agent, freeing the socket; the next command falls back to
+direct-open. To bring the agent back, run `pass-cli agent start` again.
 
 Flags:
 
