@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -65,6 +66,12 @@ type Agent struct {
 	unlockedAt   time.Time
 	lastActivity time.Time
 	locked       bool
+
+	// Revalidating-cache state: the vault file and the (modtime,size) last loaded,
+	// so a resolve can detect a sibling process's write and reload before serving.
+	vaultPath   string
+	lastModTime time.Time
+	lastSize    int64
 }
 
 // New wraps an already-unlocked VaultService. The caller unlocks the vault (via a
@@ -80,7 +87,7 @@ func New(vs *vault.VaultService, opts Options) *Agent {
 		log = nopLogger{}
 	}
 	now := clock.Now()
-	return &Agent{
+	a := &Agent{
 		vs:           vs,
 		clock:        clock,
 		idleTimeout:  opts.IdleTimeout,
@@ -88,7 +95,14 @@ func New(vs *vault.VaultService, opts Options) *Agent {
 		log:          log,
 		unlockedAt:   now,
 		lastActivity: now,
+		vaultPath:    vs.Path(),
 	}
+	// Record the vault file's current state so the first change is detectable.
+	if fi, err := os.Stat(a.vaultPath); err == nil {
+		a.lastModTime = fi.ModTime()
+		a.lastSize = fi.Size()
+	}
+	return a
 }
 
 // Handle processes one decoded request under the agent mutex and returns the
@@ -138,6 +152,12 @@ func (a *Agent) handleResolve(p *ResolveParams) Response {
 		return errResponse("resolve: missing parameters")
 	}
 
+	// Revalidating cache: if a sibling process rewrote the vault, reload before
+	// serving so we never hand out a stale snapshot.
+	if err := a.refreshIfChanged(); err != nil {
+		return errResponse(err.Error())
+	}
+
 	mappings := make([]envmap.Mapping, len(p.Refs))
 	services := make([]string, len(p.Refs))
 	for i, ref := range p.Refs {
@@ -173,6 +193,30 @@ func (a *Agent) handleStatus() Response {
 		}
 	}
 	return Response{Version: ProtocolVersion, OK: true, Status: st}
+}
+
+// refreshIfChanged reloads the resident vault snapshot when vault.enc changed on
+// disk since the last load (a sibling process wrote it). Must be called with a.mu
+// held. A transient stat error is ignored (serve the current snapshot). A reload
+// failure — the on-disk vault can no longer be decrypted with the held password,
+// e.g. the master password was rotated — locks the agent and returns an error;
+// the agent never serves a stale snapshot in that case.
+func (a *Agent) refreshIfChanged() error {
+	fi, err := os.Stat(a.vaultPath)
+	if err != nil {
+		return nil // transient; serve the current snapshot
+	}
+	if fi.ModTime().Equal(a.lastModTime) && fi.Size() == a.lastSize {
+		return nil // unchanged
+	}
+	if err := a.vs.Reload(); err != nil {
+		a.lockLocked("reload_failed")
+		return fmt.Errorf("vault changed on disk and could not be reloaded (locking): %w", err)
+	}
+	a.lastModTime = fi.ModTime()
+	a.lastSize = fi.Size()
+	a.log.Event("reloaded", nil)
+	return nil
 }
 
 // enforceAutoLock locks the resident vault if the idle timeout or max-TTL has

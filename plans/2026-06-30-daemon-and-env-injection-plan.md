@@ -133,7 +133,7 @@ Why slash and not `${pass:service:field}`: the template is exactly where the col
 - **2b — unix-socket transport + `agent`/`stop`/`status`/`lock` commands + `socketResolver` + client try-socket-then-fallback.** Socket dir `0700` / socket `0600` land **here** (filesystem perms are the primary access control per §5.3 — not deferred to 2c). Plumbing.
 - **2c — peer-cred auth (Linux `SO_PEERCRED`).** Security-critical; decision (`uid==owner`) separated from the syscall so it's table-testable and fail-closed. **Hold for review.**
 - **2d — memguard for the resident key.** Confined to `internal/agent` (the daemon derives/guards its *own* Enclave; `VaultService.masterPassword` is untouched). Security-critical. **Hold for review.**
-- **2e — revalidating cache + batched usage tracking.** Local-file staleness refresh (§5.8), coalesced `track` write-back that re-reads current on-disk vault. Plumbing.
+- **2e — revalidating cache ONLY (batched tracking deferred).** Local-file staleness refresh (§5.8): the agent reloads its snapshot when `vault.enc` changed on disk, and **locks** if the on-disk vault can no longer be decrypted with the held key (rotated password). Read-only, so it preserves the invariant every socket consumer relies on. **Batched usage tracking (decision #2) is deferred** — it has no consumer today (the socket's only clients, `exec`/`export`/`inject`, are deliberately read-only; `get` still tracks on its own direct path and was never routed through the agent), it would regress that documented read-only contract, and a daemon-initiated write-back is the project's highest data-loss risk (stale-snapshot overwrite of a sibling `add`/`update` — the #120 class). Revisit when/if `get` is routed through the agent. Plumbing.
 - **2f — cross-platform (macOS `getpeereid`, Windows named pipe + ACL peer-cred).** Runs only in CI on those runners. Security-critical. **Hold for review.**
 
 The subsections below are the full design; each sub-PR implements its slice.
@@ -157,12 +157,12 @@ New `cmd/agent.go` group:
 - **Stale-socket reclaim on startup:** dial the existing path; if connection refused, `unlink` + rebind; if it answers, exit "agent already running." (Classic footgun — make it explicit.)
 - **Discovery by clients:** env var `PASS_CLI_AGENT_SOCK` overrides; else the default path. If dialing fails for any reason, fall back to direct-open silently (verbose: note the fallback on stderr).
 
-### 5.4 Auth: peer-credential checks in build-tagged files
-New files (introducing the platform-file pattern this repo lacks today):
-- `agentconn/peercred_linux.go` — `SO_PEERCRED` (`unix.GetsockoptUcred`), assert `uid == os.Getuid()`.
-- `agentconn/peercred_darwin.go` — `getpeereid` (via `golang.org/x/sys/unix`), assert uid.
-- `agentconn/peercred_windows.go` — `GetNamedPipeClientProcessId` + token/SID comparison; the primary control is the pipe ACL. **Verify the exact go-winio / `x/sys/windows` API at implementation time** (go-winio was not resolvable in the docs index during planning; confirm it surfaces client PID/SID).
-Reject any peer whose uid/SID ≠ the agent owner, **before** processing the request.
+### 5.4 Auth: peer-credential checks in build-tagged files — 2c SHIPPED (Linux)
+Build-tagged files in `internal/agent` (introducing the platform-file pattern this repo lacked):
+- `peercred_linux.go` (2c) — `SO_PEERCRED` (`unix.GetsockoptUcred`) → `peerUID`; `authorizePeer` asserts `authorizedUID(peerUID, os.Getuid())`, **fail-closed** on any error. The decision `authorizedUID` is a pure function, table-tested independent of the syscall.
+- `peercred_stub.go` (2c) — `//go:build !linux` no-op (macOS/Windows rely on the `0600` socket until 2f; must NOT fail-closed here or it rejects the owner). `handleConn` calls `authorizePeer` **before** decoding/processing the request.
+- `peercred_darwin.go` (2f) — `getpeereid`, assert uid.
+- `peercred_windows.go` (2f) — `GetNamedPipeClientProcessId` + token/SID comparison; the primary control is the pipe ACL. **Verify the exact go-winio / `x/sys/windows` API at implementation time.**
 
 ### 5.5 Concurrency: mutex-guarded, read-only resolve
 `VaultService` is not safe for concurrent mutation. The agent serves N shells:
