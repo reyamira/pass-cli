@@ -71,6 +71,22 @@ func TestParseSetSpec(t *testing.T) {
 	}
 }
 
+// TestValidEnvName covers the shell-safe env-name gate export relies on.
+func TestValidEnvName(t *testing.T) {
+	valid := []string{"X", "_", "GITHUB_TOKEN", "_leading", "A1", "MY_VAR_2"}
+	invalid := []string{"", "2FA", "1", "HAS-DASH", "HAS SPACE", "HAS;SEMI", "a.b", "a/b", "X=Y"}
+	for _, n := range valid {
+		if !ValidEnvName(n) {
+			t.Errorf("ValidEnvName(%q) = false, want true", n)
+		}
+	}
+	for _, n := range invalid {
+		if ValidEnvName(n) {
+			t.Errorf("ValidEnvName(%q) = true, want false", n)
+		}
+	}
+}
+
 // TestSplitPath exercises the shared separator directly, including the
 // slash-wins / colon-literal rule that later surfaces (manifest, templates) rely on.
 func TestSplitPath(t *testing.T) {

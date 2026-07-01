@@ -10,8 +10,22 @@ package envmap
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+// envNameRe matches a POSIX-portable environment variable name: a letter or
+// underscore followed by letters, digits, or underscores.
+var envNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// ValidEnvName reports whether name is a safe environment variable name. This
+// matters most for surfaces that emit shell text to be eval'd (export): an
+// unvalidated --set name like "X=1;rm -rf" would be literal shell injection, and
+// a derived name that starts with a digit (e.g. service "2fa" -> "2FA") is not a
+// name any shell can assign.
+func ValidEnvName(name string) bool {
+	return envNameRe.MatchString(name)
+}
 
 // Mapping pairs a target environment variable name with the credential service
 // whose field value should be injected into it. Field is the optional per-mapping
