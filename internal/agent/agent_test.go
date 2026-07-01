@@ -25,7 +25,7 @@ func newTestVault(t *testing.T) *vault.VaultService {
 	if err != nil {
 		t.Fatalf("vault.New: %v", err)
 	}
-	if err := vs.Initialize([]byte("TestPassword123!"), false, filepath.Join(dir, "audit.log"), "agent-test"); err != nil {
+	if err := vs.Initialize([]byte("TestPassword123!"), false, "", "agent-test"); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	if err := vs.Unlock([]byte("TestPassword123!")); err != nil {
