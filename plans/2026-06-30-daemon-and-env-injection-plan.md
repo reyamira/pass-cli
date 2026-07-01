@@ -108,14 +108,14 @@ A committable template with **references only** (`${pass:service/field}`) is res
 - **`run` folded into `exec --env-file` (owner decision 2026-07-01).** Issue #115 named a `run --env-file` command, but it would duplicate `exec` (both inject env → run child). Instead `--env-file <path>` is an additional env source on `exec`: each `KEY=<template>` line is rendered (`envmap.RenderTemplate`) and injected structurally into the child env (never to disk). Net surface: `exec` (run child) / `export` (shell statements) / `inject` (render to stdout) — three distinct output behaviors, no overlap, no separate `run`.
 - **Template engine (`internal/envmap.RenderTemplate`)** is single-pass and fail-closed: all `${pass:...}` refs are collected from the *original* template and resolved in **one batch** call (Phase 2's socket → one round-trip), then substituted; a resolved value containing `${pass:...}` is never re-scanned (injection guard); an unknown/malformed ref aborts the whole render (no partial/silent-empty output). Only `${pass:...}` is special — `$VAR`, `${VAR}`, `$(...)` pass through.
 
-### 4.3 Project manifest `.pass-cli.toml` / `--from <file>` (#115.4) — ranked #4
+### 4.3 Project manifest `.pass-cli.toml` / `--from <file>` (#115.4) — ranked #4 — SHIPPED
 Names-only map so launchers/`.envrc` don't repeat long `--set` chains:
 ```toml
 [env]
-GITHUB_TOKEN = "github:password"
-DB_PASSWORD  = "postgres:password"
+GITHUB_TOKEN = "github"
+DB_PASSWORD  = "postgres/password"
 ```
-`--from .pass-cli.toml` expands to the same `[]envMapping`. Parser lives in `internal/envmap`. Committable because it contains **references, never values**.
+`--from .pass-cli.toml` (repeatable, on both `exec` and `export`) expands to `[]envmap.Mapping`. `envmap.ParseManifest` (pelletier/go-toml/v2) validates each env name and `SplitPath`s each reference, returning mappings **sorted by env name** for deterministic output. Committable because it contains **references, never values**. Composes with `--set`; `--from`/`--env-file` presence lets `exec`/`export` run with no `--set`/positional.
 
 ### 4.4 Transforms (#115.3) — band-aid, deferred
 Do **not** build a general filter pipeline now. If pressure exists, scope to a single, explicitly-labeled-convenience `:base64` suffix for Basic-auth headers, gated behind a follow-up. Present it as a band-aid, not a peer feature.
