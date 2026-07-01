@@ -44,19 +44,6 @@ func Stop() error {
 	return nil
 }
 
-// LockAgent tells a running agent to zero its resident secrets; the agent then
-// stops and frees its socket (see serve.go). Returns ErrNoAgent if none is running.
-func LockAgent() error {
-	resp, err := sendControl(MethodLock)
-	if err != nil {
-		return err
-	}
-	if !resp.OK {
-		return errors.New(resp.Error)
-	}
-	return nil
-}
-
 // QueryStatus returns a running agent's status snapshot.
 func QueryStatus() (*Status, error) {
 	resp, err := sendControl(MethodStatus)
