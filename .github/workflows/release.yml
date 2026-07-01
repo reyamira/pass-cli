@@ -30,7 +30,10 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: latest
+          # Pinned to a known-good version (see #113). Bump deliberately after the
+          # CI snapshot Build job has exercised the new version, never via `latest`,
+          # so a GoReleaser change can't break a release after the tag is created.
+          version: v2.16.0
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -2,26 +2,20 @@ name: CI
 
 on:
   workflow_dispatch:
+  # NOTE: no paths-ignore on either push or pull_request. The required status
+  # checks (Lint, Unit Tests, Build, Integration Tests) are ruleset requirements
+  # on both the `main` branch and the `refs/tags/v*` release tags, so they must
+  # *report* on every main commit and every PR — otherwise (a) a PR can never
+  # merge, and (b) a `v*` tag created on a docs-only commit is rejected because
+  # the checks never ran on that SHA (see #114). The jobs below already
+  # short-circuit to success via "Skip if no code changes" when check-changes
+  # finds no Go/build files, so non-code pushes/PRs (docs, skills, .gitignore)
+  # still satisfy the required checks in seconds. A workflow-level paths-ignore
+  # would suppress the whole workflow and leave those commits/PRs blocked.
   push:
     branches: [main]
     tags-ignore:
       - 'v*'
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'specs/**'
-      - '.specify/**'
-      - 'CLAUDE.md'
-      - 'CONTRIBUTING.md'
-      - 'LICENSE'
-      - '.gitignore'
-  # NOTE: no paths-ignore here. The required status checks (Lint, Unit Tests,
-  # Build, Integration Tests) are branch-ruleset requirements, so they must
-  # *report* on every PR or the PR can never merge. The jobs below already
-  # short-circuit to success via "Skip if no code changes" when check-changes
-  # finds no Go/build files, so non-code PRs (docs, skills, .gitignore) still
-  # satisfy the required checks in seconds. A workflow-level paths-ignore would
-  # suppress the whole workflow and leave those PRs blocked forever.
   pull_request:
     branches: [main]
 
@@ -216,5 +210,10 @@ jobs:
         if: needs.check-changes.outputs.code-changed == 'true'
         uses: goreleaser/goreleaser-action@v6
         with:
-          version: latest
+          # Pinned (not `latest`) so GoReleaser upgrades are deliberate and get
+          # exercised by this snapshot Build job before they can affect a real
+          # release. `latest` silently rolls forward at tag time — a future
+          # GoReleaser that removes the deprecated `brews:` key would otherwise
+          # break the release with no advance warning (see #113).
+          version: v2.16.0
           args: build --snapshot --clean
