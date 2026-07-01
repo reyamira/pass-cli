@@ -2,6 +2,7 @@
 package sync
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,18 @@ import (
 	"github.com/arimxyer/pass-cli/internal/timing"
 )
 
+// defaultProbeTimeout bounds the remote metadata probe (rclone lsjson). The
+// probe sits on the synchronous unlock path of every synced command, so a slow
+// or hung remote (e.g. transient Google Drive latency) must not block the CLI
+// indefinitely. On timeout the probe returns an error, which SmartPull already
+// treats as "couldn't check remote" and proceeds with the local vault — a
+// bounded, graceful degradation instead of a multi-second stall.
+//
+// Only the metadata probe (Run) is bounded. The heavy transfers (RunNoOutput —
+// the actual vault pull/push) are intentionally NOT bounded here: a real
+// transfer may legitimately take longer and must never be truncated mid-flight.
+const defaultProbeTimeout = 8 * time.Second
+
 // ErrSyncConflict indicates both local and remote have changed since last sync.
 var ErrSyncConflict = errors.New("sync conflict: both local and remote vault have changed")
 
@@ -25,10 +38,23 @@ type CommandExecutor interface {
 }
 
 // execExecutor is the real implementation using os/exec.
-type execExecutor struct{}
+type execExecutor struct {
+	// runTimeout bounds Run (the metadata probe). Zero disables the bound.
+	runTimeout time.Duration
+}
 
 func (e *execExecutor) Run(name string, args ...string) ([]byte, error) {
 	// #nosec G204 -- command args are constructed from user-configured values
+	if e.runTimeout > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), e.runTimeout)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, name, args...).Output()
+		if ctx.Err() == context.DeadlineExceeded {
+			// Surface a clear reason instead of the process's "signal: killed".
+			return out, fmt.Errorf("timed out after %s", e.runTimeout)
+		}
+		return out, err
+	}
 	cmd := exec.Command(name, args...)
 	return cmd.Output()
 }
@@ -141,7 +167,7 @@ type Service struct {
 func NewService(cfg config.SyncConfig) *Service {
 	return &Service{
 		config:   cfg,
-		executor: &execExecutor{},
+		executor: &execExecutor{runTimeout: defaultProbeTimeout},
 	}
 }
 

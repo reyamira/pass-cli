@@ -6,12 +6,53 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/arimxyer/pass-cli/internal/config"
 )
+
+// TestExecExecutor_RunTimeout verifies the metadata probe is bounded: a Run that
+// exceeds runTimeout is killed promptly and returns a clear "timed out" error
+// (which SmartPull degrades to serving the local vault). This is the guard
+// against a slow/hung remote (e.g. transient Google Drive latency) stalling
+// every synced command.
+func TestExecExecutor_RunTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses the POSIX `sleep` command")
+	}
+	e := &execExecutor{runTimeout: 100 * time.Millisecond}
+	start := time.Now()
+	_, err := e.Run("sleep", "10")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected a timeout error, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("expected a 'timed out' error, got: %v", err)
+	}
+	if elapsed > 3*time.Second {
+		t.Errorf("timeout did not fire promptly: took %v (want << 10s)", elapsed)
+	}
+}
+
+// TestExecExecutor_RunWithinTimeout confirms a fast command still succeeds when a
+// timeout is configured (the bound only bites on overruns).
+func TestExecExecutor_RunWithinTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses the POSIX `echo` command")
+	}
+	e := &execExecutor{runTimeout: 5 * time.Second}
+	out, err := e.Run("echo", "ok")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(string(out), "ok") {
+		t.Errorf("expected output to contain 'ok', got %q", out)
+	}
+}
 
 // mockExecutor records calls and returns configured responses.
 type mockExecutor struct {
