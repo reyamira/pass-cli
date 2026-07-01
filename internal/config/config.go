@@ -41,7 +41,10 @@ type SyncConfig struct {
 	// PullTTLSeconds gates the pre-unlock remote probe: within this window a
 	// command serves the local vault without a remote round-trip (writes still do
 	// a fresh conflict check at push time). 0 uses the built-in default (30s); a
-	// negative value disables the gate (probe on every command).
+	// negative value disables the gate (probe on every command). The same window
+	// also doubles as the failure-backoff: after a probe fails (unreachable/slow
+	// remote) the next commands skip the probe until it expires, so a dead remote
+	// costs the probe timeout at most once per window instead of on every call.
 	PullTTLSeconds int `mapstructure:"pull_ttl_seconds"`
 }
 
