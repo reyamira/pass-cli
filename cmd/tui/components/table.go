@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/arimxyer/pass-cli/cmd/tui/models"
@@ -82,6 +83,12 @@ func (ct *CredentialTable) Refresh() {
 	// Apply search filter on top of category filter
 	searchState := ct.appState.GetSearchState()
 	ct.filteredCreds = ct.filterBySearch(categoryFiltered, searchState)
+
+	// Sort by service alphabetically (case-insensitive) so the table matches
+	// the sidebar's ordering; GetCredentials returns map-iteration order.
+	sort.Slice(ct.filteredCreds, func(i, j int) bool {
+		return lessFold(ct.filteredCreds[i].Service, ct.filteredCreds[j].Service)
+	})
 
 	// Get current row count (excluding header)
 	currentRowCount := ct.GetRowCount() - 1

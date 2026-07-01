@@ -282,10 +282,13 @@ func TestCredentialTablePopulateRows(t *testing.T) {
 
 	// Setup credentials with different last accessed times
 	now := time.Now()
+	// Includes a lowercase "azure" entry: under a case-sensitive sort it would
+	// land last (ASCII 'a' > 'G'), but case-insensitively it belongs after AWS.
 	mockCreds := []vault.CredentialMetadata{
 		{Service: "AWS", Username: "admin", CreatedAt: now, LastAccessed: now.Add(-30 * time.Second)},
 		{Service: "GitHub", Username: "user", CreatedAt: now, LastAccessed: now.Add(-5 * time.Minute)},
 		{Service: "Database", Username: "dbuser", CreatedAt: now, LastAccessed: time.Time{}},
+		{Service: "azure", Username: "svc", CreatedAt: now, LastAccessed: now.Add(-1 * time.Minute)},
 	}
 	mockVault.SetCredentials(mockCreds)
 	_ = state.LoadCredentials()
@@ -293,27 +296,29 @@ func TestCredentialTablePopulateRows(t *testing.T) {
 	table := NewCredentialTable(state)
 	table.Refresh()
 
-	// Verify row 1 (AWS)
-	row1Col0 := table.GetCell(1, 0)
-	if row1Col0.Text != "AWS" {
-		t.Errorf("Expected 'AWS', got '%s'", row1Col0.Text)
+	// Rows are sorted alphabetically by service (case-insensitive), so the
+	// expected order is AWS, azure, Database, GitHub regardless of insertion order.
+	wantOrder := []string{"AWS", "azure", "Database", "GitHub"}
+	for i, want := range wantOrder {
+		got := table.GetCell(i+1, 0).Text
+		if got != want {
+			t.Errorf("Expected row %d service '%s', got '%s'", i+1, want, got)
+		}
 	}
 
 	// Verify credential reference stored in cell
-	if row1Col0.GetReference() == nil {
+	if table.GetCell(1, 0).GetReference() == nil {
 		t.Error("Expected credential reference in cell, got nil")
 	}
 
-	// Verify row 2 (GitHub) last used formatted
-	row2Col2 := table.GetCell(2, 2)
-	if row2Col2.Text == "" {
+	// GitHub (row 4) last used formatted
+	if got := table.GetCell(4, 2).Text; got == "" {
 		t.Error("Expected formatted last used time")
 	}
 
-	// Verify row 3 (Database) shows "Never" for zero time
-	row3Col2 := table.GetCell(3, 2)
-	if row3Col2.Text != "Never" {
-		t.Errorf("Expected 'Never' for zero LastAccessed, got '%s'", row3Col2.Text)
+	// Database (row 3) shows "Never" for zero time
+	if got := table.GetCell(3, 2).Text; got != "Never" {
+		t.Errorf("Expected 'Never' for zero LastAccessed, got '%s'", got)
 	}
 }
 
