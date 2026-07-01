@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`export` command — print shell statements that set credentials as env vars** (#115) — `pass-cli export` emits `export NAME='value'` for `eval`/`source`, the blessed replacement for `VAR="$(pass-cli get …)"`: `eval "$(pass-cli export --set GITHUB_TOKEN=github)"`. Uses the same mapping grammar as `exec` (repeatable `--set ENV_NAME=service[/field]` and the convenience form `pass-cli export <service>`, which derives the name from the service), and the same `-f/--field` selection. `--format sh|fish|powershell` selects the shell syntax (default `sh`). Read-only like `exec` (records no usage, triggers no sync push). Because `export` output is meant to be eval'd, env names are validated against `[A-Za-z_][A-Za-z0-9_]*` before the vault is opened, and every field value is shell-quoted per target shell.
+
+### Changed
+- **Env-injection grammar: prefer `/` over `:`** (#115) — credential references now accept a slash separator (`service/field`) in addition to the legacy colon form (`service:field`, still accepted unchanged). Slash is preferred because in slash form a `:` inside a service name is a literal character, and it lines up with a future `op://`-style path. Applies to `--set` on both `exec` and `export`.
+
 ## [0.18.0] - 2026-06-26
 
 ### Added
