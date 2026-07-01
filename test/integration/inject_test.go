@@ -57,12 +57,15 @@ func TestIntegration_Inject_OutFileIs0600(t *testing.T) {
 	if got := string(data); got != "TOKEN="+secret+"\n" {
 		t.Errorf("out-file content = %q, want %q", got, "TOKEN="+secret+"\n")
 	}
-	info, err := os.Stat(outFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0600 {
-		t.Errorf("out-file perms = %o, want 0600", perm)
+	// Unix permission bits are not meaningful on Windows (files report 0666).
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(outFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Errorf("out-file perms = %o, want 0600", perm)
+		}
 	}
 }
 
