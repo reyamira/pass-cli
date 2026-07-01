@@ -109,3 +109,32 @@ func TestServer_ShutdownStops(t *testing.T) {
 		t.Fatalf("pre-shutdown resolve failed: %v", err)
 	}
 }
+
+// TestServer_LockStopsServerPromptly verifies that a `lock` request stops the
+// server right away (freeing the socket) rather than leaving a locked-but-running
+// agent around until the next expiry tick — so clients fall back to direct-open and
+// a fresh agent can rebind immediately.
+func TestServer_LockStopsServerPromptly(t *testing.T) {
+	stop := startTestAgent(t)
+	defer stop()
+
+	if _, ok := DialResolver(); !ok {
+		t.Fatal("agent should be reachable before lock")
+	}
+
+	if err := LockAgent(); err != nil {
+		t.Fatalf("LockAgent: %v", err)
+	}
+
+	// The socket must become unreachable quickly (server stopped on the lock).
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, ok := DialResolver(); !ok {
+			return // server stopped — clients will now fall back to direct-open
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("agent still reachable after lock — server did not stop promptly")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
