@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -11,6 +12,81 @@ import (
 
 	"github.com/arimxyer/pass-cli/internal/envmap"
 )
+
+// TestParseExecArgs_EnvFileAllowsEmptyMappings verifies that with an --env-file
+// present (envFileCount > 0), no --set or positional service is required.
+func TestParseExecArgs_EnvFileAllowsEmptyMappings(t *testing.T) {
+	mappings, child, err := parseExecArgs(nil, 1, []string{"server"}, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(mappings) != 0 {
+		t.Errorf("expected no --set mappings, got %v", mappings)
+	}
+	if len(child) != 1 || child[0] != "server" {
+		t.Errorf("child argv = %v, want [server]", child)
+	}
+
+	// Without any source (no --set, no positional, no env-file), it still errors.
+	if _, _, err := parseExecArgs(nil, 0, []string{"server"}, 0); err == nil {
+		t.Error("expected error when no credential source is given")
+	}
+}
+
+// TestReadEnvFileTemplates covers parsing, comment/blank skipping, and validation.
+func TestReadEnvFileTemplates(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.env")
+	content := "" +
+		"# a comment\n" +
+		"\n" +
+		"DATABASE_URL=postgres://app:${pass:db/password}@localhost/app\n" +
+		"  TOKEN = ${pass:github}  \n" + // surrounding spaces trimmed
+		"# trailing comment\n"
+	if err := os.WriteFile(good, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := readEnvFileTemplates([]string{good})
+	if err != nil {
+		t.Fatalf("readEnvFileTemplates: %v", err)
+	}
+	want := []envFileEntry{
+		{Key: "DATABASE_URL", Template: "postgres://app:${pass:db/password}@localhost/app"},
+		{Key: "TOKEN", Template: "${pass:github}"},
+	}
+	if len(entries) != len(want) {
+		t.Fatalf("got %d entries, want %d: %+v", len(entries), len(want), entries)
+	}
+	for i := range want {
+		if entries[i] != want[i] {
+			t.Errorf("entry %d = %+v, want %+v", i, entries[i], want[i])
+		}
+	}
+
+	// Missing path is an error.
+	if _, err := readEnvFileTemplates([]string{filepath.Join(dir, "nope.env")}); err == nil {
+		t.Error("expected error for missing env-file")
+	}
+
+	// A line without '=' is an error.
+	bad := filepath.Join(dir, "bad.env")
+	if err := os.WriteFile(bad, []byte("NO_EQUALS_HERE\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readEnvFileTemplates([]string{bad}); err == nil {
+		t.Error("expected error for a line without '='")
+	}
+
+	// An invalid env name is an error.
+	badName := filepath.Join(dir, "badname.env")
+	if err := os.WriteFile(badName, []byte("BAD;NAME=${pass:x}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readEnvFileTemplates([]string{badName}); err == nil {
+		t.Error("expected error for invalid env name in env-file")
+	}
+}
 
 // TestParseExecArgs covers the credential-mapping / child-argv split, the
 // convenience form, and every error path, using a hand-set dash index.
@@ -124,7 +200,7 @@ func TestParseExecArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mappings, child, err := parseExecArgs(tt.sets, tt.args, tt.dashIdx)
+			mappings, child, err := parseExecArgs(tt.sets, 0, tt.args, tt.dashIdx)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got mappings=%v child=%v", mappings, child)
@@ -154,7 +230,7 @@ func TestExecCmd_ArgsLenAtDash(t *testing.T) {
 			Use:  "exec",
 			Args: cobra.ArbitraryArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				mappings, child, parseErr = parseExecArgs(sets, args, cmd.ArgsLenAtDash())
+				mappings, child, parseErr = parseExecArgs(sets, 0, args, cmd.ArgsLenAtDash())
 				return nil
 			},
 		}
