@@ -90,6 +90,14 @@ func runAgent(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("an agent is already running at %s", agent.SocketPath())
 	}
 
+	// Harden the daemon's memory BEFORE unlocking, so the master password and
+	// decrypted credentials never touch swap and the process cannot be core-dumped
+	// or casually ptraced. Best-effort: a failure (e.g. a low RLIMIT_MEMLOCK) is a
+	// warning, not fatal — the agent is then no worse off than a one-shot command.
+	if err := agent.HardenProcessMemory(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: could not harden agent memory (%v); continuing without mlock\n", err)
+	}
+
 	vaultPath := GetVaultPath()
 	if _, err := os.Stat(vaultPath); os.IsNotExist(err) {
 		return fmt.Errorf("vault not found at %s\nRun 'pass-cli init' to create a vault first", vaultPath)

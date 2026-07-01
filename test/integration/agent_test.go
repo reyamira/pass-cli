@@ -4,6 +4,7 @@ package integration
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,7 +33,7 @@ func shortSocketPath(t *testing.T) string {
 // startAgent launches `pass-cli agent` in the background on a temp socket, unlocks
 // it via stdin, waits for the socket to appear (which happens only after unlock),
 // and returns the socket path plus a stop func.
-func startAgent(t *testing.T, configPath, password string) (sockPath string, stop func()) {
+func startAgent(t *testing.T, configPath, password string) (sockPath string, pid int, stop func()) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("agent uses a unix socket; Windows named pipe is Phase 2f")
@@ -51,6 +52,7 @@ func startAgent(t *testing.T, configPath, password string) (sockPath string, sto
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start agent: %v", err)
 	}
+	pid = cmd.Process.Pid
 	stopped := false
 	stop = func() {
 		if stopped {
@@ -67,7 +69,7 @@ func startAgent(t *testing.T, configPath, password string) (sockPath string, sto
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if _, err := os.Stat(sockPath); err == nil {
-			return sockPath, stop
+			return sockPath, pid, stop
 		}
 		if time.Now().After(deadline) {
 			stop()
@@ -99,7 +101,7 @@ func runWithAgent(t *testing.T, configPath, sockPath string, args ...string) (st
 // running agent with no password prompt.
 func TestIntegration_Agent_ExecResolvesViaSocket(t *testing.T) {
 	configPath, password, service, secret := setupExecVault(t)
-	sockPath, _ := startAgent(t, configPath, password)
+	sockPath, _, _ := startAgent(t, configPath, password)
 
 	out, stderr, err := runWithAgent(t, configPath, sockPath,
 		"exec", "--set", "TOK="+service, "--", "sh", "-c", `printf %s "$TOK"`)
@@ -114,7 +116,7 @@ func TestIntegration_Agent_ExecResolvesViaSocket(t *testing.T) {
 // TestIntegration_Agent_ExportResolvesViaSocket proves export also uses the agent.
 func TestIntegration_Agent_ExportResolvesViaSocket(t *testing.T) {
 	configPath, password, service, secret := setupExecVault(t)
-	sockPath, _ := startAgent(t, configPath, password)
+	sockPath, _, _ := startAgent(t, configPath, password)
 
 	out, stderr, err := runWithAgent(t, configPath, sockPath, "export", "--set", "TOK="+service)
 	if err != nil {
@@ -129,7 +131,7 @@ func TestIntegration_Agent_ExportResolvesViaSocket(t *testing.T) {
 // TestIntegration_Agent_Status queries a running agent.
 func TestIntegration_Agent_Status(t *testing.T) {
 	configPath, password, _, _ := setupExecVault(t)
-	sockPath, _ := startAgent(t, configPath, password)
+	sockPath, _, _ := startAgent(t, configPath, password)
 
 	out, stderr, err := runWithAgent(t, configPath, sockPath, "agent", "status")
 	if err != nil {
@@ -140,11 +142,43 @@ func TestIntegration_Agent_Status(t *testing.T) {
 	}
 }
 
+// TestIntegration_Agent_MemoryHardened verifies PR_SET_DUMPABLE=0 took effect on
+// the agent process: a non-dumpable process's /proc/<pid>/environ becomes
+// root-owned, so the same user can no longer read it. This proves the privilege-
+// free hardening ran (mlockall is best-effort and RLIMIT-dependent, so it is not
+// asserted here).
+func TestIntegration_Agent_MemoryHardened(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("PR_SET_DUMPABLE / mlock hardening is Linux-only for now")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: /proc access rules for non-dumpable processes differ")
+	}
+	configPath, password, service, secret := setupExecVault(t)
+	sockPath, pid, _ := startAgent(t, configPath, password)
+
+	// The agent must still resolve with hardening applied.
+	out, stderr, err := runWithAgent(t, configPath, sockPath,
+		"exec", "--set", "TOK="+service, "--", "sh", "-c", `printf %s "$TOK"`)
+	if err != nil {
+		t.Fatalf("resolve with hardening failed: %v\nStderr: %s", err, stderr)
+	}
+	if strings.TrimSpace(out) != secret {
+		t.Errorf("resolve with hardening: got %q, want %q", strings.TrimSpace(out), secret)
+	}
+
+	// PR_SET_DUMPABLE=0 makes /proc/<pid>/environ root-owned, so the owning user can
+	// no longer read it. (mlockall is best-effort / RLIMIT-dependent, so not asserted.)
+	if _, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid)); err == nil {
+		t.Error("agent /proc/<pid>/environ is readable — PR_SET_DUMPABLE=0 did not take effect")
+	}
+}
+
 // TestIntegration_Agent_StopThenFallback stops the agent and verifies commands fall
 // back to direct-open (with the password supplied on stdin).
 func TestIntegration_Agent_StopThenFallback(t *testing.T) {
 	configPath, password, service, secret := setupExecVault(t)
-	sockPath, stop := startAgent(t, configPath, password)
+	sockPath, _, stop := startAgent(t, configPath, password)
 
 	// Stop the agent, then resolve via direct-open with the password on stdin.
 	if _, stderr, err := runWithAgent(t, configPath, sockPath, "agent", "stop"); err != nil {
