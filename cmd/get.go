@@ -139,7 +139,7 @@ func runGet(cmd *cobra.Command, args []string) error {
 
 func outputQuietMode(cred *vault.Credential, vaultService *vault.VaultService, service string) error {
 	// Shared field resolver keeps the valid-field list in sync with `exec`.
-	value, fieldName, err := resolveCredentialField(cred, getField)
+	value, fieldName, err := vault.ResolveCredentialField(cred, getField)
 	if err != nil {
 		return err
 	}
