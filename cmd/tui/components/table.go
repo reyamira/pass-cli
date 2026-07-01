@@ -3,6 +3,7 @@ package components
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/arimxyer/pass-cli/cmd/tui/models"
@@ -84,10 +85,32 @@ func (ct *CredentialTable) Refresh() {
 	searchState := ct.appState.GetSearchState()
 	ct.filteredCreds = ct.filterBySearch(categoryFiltered, searchState)
 
-	// Sort by service alphabetically (case-insensitive) so the table matches
-	// the sidebar's ordering; GetCredentials returns map-iteration order.
+	// Sort by the user-selected field and direction (defaults to Service
+	// ascending); GetCredentials returns map-iteration order. Each comparator
+	// falls back to Service so the ordering is fully deterministic on ties.
+	sortField := ct.appState.GetSortField()
+	lessBy := func(a, b vault.CredentialMetadata) bool {
+		switch sortField {
+		case models.SortByUsername:
+			if !strings.EqualFold(a.Username, b.Username) {
+				return lessFold(a.Username, b.Username)
+			}
+			return lessFold(a.Service, b.Service)
+		case models.SortByLastUsed:
+			if !a.LastAccessed.Equal(b.LastAccessed) {
+				return a.LastAccessed.Before(b.LastAccessed)
+			}
+			return lessFold(a.Service, b.Service)
+		default:
+			return lessFold(a.Service, b.Service)
+		}
+	}
+	ascending := ct.appState.GetSortAscending()
 	sort.Slice(ct.filteredCreds, func(i, j int) bool {
-		return lessFold(ct.filteredCreds[i].Service, ct.filteredCreds[j].Service)
+		if ascending {
+			return lessBy(ct.filteredCreds[i], ct.filteredCreds[j])
+		}
+		return lessBy(ct.filteredCreds[j], ct.filteredCreds[i])
 	})
 
 	// Get current row count (excluding header)
@@ -142,8 +165,12 @@ func (ct *CredentialTable) Refresh() {
 		}
 	}
 
-	// Update title with count
-	ct.SetTitle(fmt.Sprintf(" Credentials (%d) ", len(ct.filteredCreds)))
+	// Update title with count and current sort (field + direction arrow)
+	arrow := "↑"
+	if !ascending {
+		arrow = "↓"
+	}
+	ct.SetTitle(fmt.Sprintf(" Credentials (%d) · %s %s ", len(ct.filteredCreds), sortField, arrow))
 
 	// Restore selection if possible
 	if len(ct.filteredCreds) > 0 {
