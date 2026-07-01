@@ -46,6 +46,14 @@ type SyncConfig struct {
 	// remote) the next commands skip the probe until it expires, so a dead remote
 	// costs the probe timeout at most once per window instead of on every call.
 	PullTTLSeconds int `mapstructure:"pull_ttl_seconds"`
+	// ProbeTimeoutSeconds bounds the pre-unlock remote metadata probe (rclone
+	// lsjson). A slow-but-alive remote whose probe exceeds this bound is treated
+	// as failed and enters the failure-backoff, so users on a high-latency
+	// backend can raise it to avoid being misclassified as down. 0 uses the
+	// built-in default (8s); a negative value disables the bound (unbounded
+	// probe). Only the metadata probe is bounded — the heavy pull/push transfers
+	// are always unbounded. Mirrors the pull_ttl_seconds tri-state.
+	ProbeTimeoutSeconds int `mapstructure:"probe_timeout_seconds"`
 }
 
 // ValidationResult represents the outcome of checking configuration correctness

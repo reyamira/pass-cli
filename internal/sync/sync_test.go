@@ -936,3 +936,46 @@ func TestSmartPush_DefersWhenFailureBackoffActive(t *testing.T) {
 		t.Errorf("expected LastPushHash untouched on defer, got %q", st.LastPushHash)
 	}
 }
+
+func TestResolveProbeTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		seconds int
+		want    time.Duration
+	}{
+		{"zero uses default", 0, defaultProbeTimeout},
+		{"positive sets bound", 5, 5 * time.Second},
+		{"negative disables bound", -1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveProbeTimeout(tt.seconds); got != tt.want {
+				t.Errorf("resolveProbeTimeout(%d) = %s, want %s", tt.seconds, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewServiceWiresProbeTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		seconds int
+		want    time.Duration
+	}{
+		{"default", 0, defaultProbeTimeout},
+		{"custom", 12, 12 * time.Second},
+		{"disabled", -1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewService(config.SyncConfig{ProbeTimeoutSeconds: tt.seconds})
+			ex, ok := svc.executor.(*execExecutor)
+			if !ok {
+				t.Fatalf("executor is %T, want *execExecutor", svc.executor)
+			}
+			if ex.runTimeout != tt.want {
+				t.Errorf("runTimeout = %s, want %s", ex.runTimeout, tt.want)
+			}
+		})
+	}
+}
