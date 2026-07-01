@@ -174,6 +174,69 @@ func TestIntegration_Agent_MemoryHardened(t *testing.T) {
 	}
 }
 
+// TestIntegration_Agent_StartDaemonizes verifies `agent start` spawns a detached
+// agent (unlocking via stdin), returns once it is listening, and that the detached
+// agent then resolves with no prompt.
+func TestIntegration_Agent_StartDaemonizes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("agent start is unsupported on Windows")
+	}
+	configPath, password, service, secret := setupExecVault(t)
+	sockPath := shortSocketPath(t)
+
+	// Always stop the detached agent, even on failure.
+	t.Cleanup(func() {
+		stop := exec.Command(binaryPath, "agent", "stop")
+		stop.Env = append(os.Environ(),
+			"PASS_CLI_TEST=1", "PASS_CLI_CONFIG="+configPath, "PASS_CLI_AGENT_SOCK="+sockPath)
+		_ = stop.Run()
+	})
+
+	// Use real OS fds: the detached `serve` inherits stdin/stderr and holds them
+	// open, so a bytes.Buffer (pipe) stderr would make start.Run()'s Wait block on a
+	// never-closing copy goroutine — the very bug this feature had to fix. A pipe for
+	// stdin (password) and a file for stderr are passed straight through, no copy
+	// goroutine. (serve's stdout is /dev/null, so capturing start's stdout is safe.)
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _, _ = pw.WriteString(helpers.BuildUnlockStdin(password)); _ = pw.Close() }()
+	errFile, err := os.CreateTemp(t.TempDir(), "start-stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := exec.Command(binaryPath, "agent", "start", "--idle", "1h", "--max-ttl", "1h")
+	start.Env = append(os.Environ(),
+		"PASS_CLI_TEST=1", "PASS_CLI_CONFIG="+configPath, "PASS_CLI_AGENT_SOCK="+sockPath)
+	start.Stdin = pr
+	var startOut bytes.Buffer
+	start.Stdout = &startOut
+	start.Stderr = errFile
+	t0 := time.Now()
+	err = start.Run()
+	_ = pr.Close()
+	serveErr, _ := os.ReadFile(errFile.Name())
+	t.Logf("agent start took %s\nstdout: %q\nstderr: %q", time.Since(t0), startOut.String(), string(serveErr))
+	if err != nil {
+		t.Fatalf("agent start failed: %v", err)
+	}
+	if !strings.Contains(startOut.String(), "agent started") {
+		t.Errorf("expected an 'agent started' message, got: %q", startOut.String())
+	}
+
+	// The detached agent resolves with no stdin/prompt.
+	out, stderr, err := runWithAgent(t, configPath, sockPath,
+		"exec", "--set", "TOK="+service, "--", "sh", "-c", `printf %s "$TOK"`)
+	if err != nil {
+		t.Fatalf("resolve via started agent failed: %v\nstderr: %s", err, stderr)
+	}
+	if strings.TrimSpace(out) != secret {
+		t.Errorf("resolve via started agent: got %q, want %q", strings.TrimSpace(out), secret)
+	}
+}
+
 // TestIntegration_Agent_LockThenFallback locks the agent and verifies it stops (the
 // socket is freed) and subsequent commands fall back to direct-open — rather than
 // hitting a locked-but-running agent.
