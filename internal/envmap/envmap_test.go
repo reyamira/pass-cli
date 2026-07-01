@@ -26,9 +26,9 @@ func TestDeriveEnvName(t *testing.T) {
 	}
 }
 
-// TestParseSetSpec covers the per-spec grammar: NAME=service, the ':field'
-// override, and every error path. This is the colon grammar extracted verbatim
-// from cmd/exec.go in Phase 0a; the slash form is added in 0b.
+// TestParseSetSpec covers the per-spec grammar for both separators. The colon
+// cases are the Phase 0a behavior and must stay green as the back-compat proof;
+// the slash cases are the additive Phase 0b form.
 func TestParseSetSpec(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -36,13 +36,20 @@ func TestParseSetSpec(t *testing.T) {
 		want    Mapping
 		wantErr bool
 	}{
+		// --- legacy colon form (back-compat, unchanged) ---
 		{name: "service only", spec: "GITHUB_TOKEN=github", want: Mapping{"GITHUB_TOKEN", "github", ""}},
-		{name: "field override", spec: "DB_USER=postgres:username", want: Mapping{"DB_USER", "postgres", "username"}},
+		{name: "colon field override", spec: "DB_USER=postgres:username", want: Mapping{"DB_USER", "postgres", "username"}},
 		{name: "empty field after colon", spec: "K=svc:", wantErr: true},
 		{name: "empty service before colon", spec: "K=:username", wantErr: true},
 		{name: "no equals", spec: "NOEQUALS", wantErr: true},
 		{name: "empty service", spec: "K=", wantErr: true},
 		{name: "empty name", spec: "=github", wantErr: true},
+		// --- additive slash form (Phase 0b) ---
+		{name: "slash field", spec: "DB_USER=postgres/username", want: Mapping{"DB_USER", "postgres", "username"}},
+		{name: "slash colon is literal in service", spec: "URL=my:svc/password", want: Mapping{"URL", "my:svc", "password"}},
+		{name: "slash empty field", spec: "K=svc/", wantErr: true},
+		{name: "slash empty service", spec: "K=/field", wantErr: true},
+		{name: "slash multi-segment reserved", spec: "K=vault/svc/field", wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -59,6 +66,44 @@ func TestParseSetSpec(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("ParseSetSpec(%q) = %+v, want %+v", tt.spec, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSplitPath exercises the shared separator directly, including the
+// slash-wins / colon-literal rule that later surfaces (manifest, templates) rely on.
+func TestSplitPath(t *testing.T) {
+	tests := []struct {
+		ref       string
+		wantSvc   string
+		wantField string
+		wantErr   bool
+	}{
+		{ref: "github", wantSvc: "github", wantField: ""},
+		{ref: "postgres:username", wantSvc: "postgres", wantField: "username"},
+		{ref: "postgres/username", wantSvc: "postgres", wantField: "username"},
+		{ref: "my:svc/password", wantSvc: "my:svc", wantField: "password"}, // colon literal in slash mode
+		{ref: "svc/", wantErr: true},
+		{ref: "/field", wantErr: true},
+		{ref: "vault/svc/field", wantErr: true}, // 3+ segments reserved
+		{ref: "svc:", wantErr: true},
+		{ref: ":field", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ref, func(t *testing.T) {
+			svc, field, err := SplitPath(tt.ref)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got service=%q field=%q", svc, field)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if svc != tt.wantSvc || field != tt.wantField {
+				t.Errorf("SplitPath(%q) = (%q, %q), want (%q, %q)", tt.ref, svc, field, tt.wantSvc, tt.wantField)
 			}
 		})
 	}

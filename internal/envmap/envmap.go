@@ -22,22 +22,53 @@ type Mapping struct {
 	Field   string
 }
 
-// ParseSetSpec parses a single "NAME=service[:field]" spec into a Mapping. The
-// first ':' separates the service from an optional field override, so a field
-// always wins when present. An empty name, empty service, or (when a ':' is
-// present) empty service/field is an error.
+// ParseSetSpec parses a single "NAME=service[/field]" spec into a Mapping. The
+// path is split by SplitPath: slash is the preferred separator, with the legacy
+// colon form still accepted. An empty name or empty service is an error.
 func ParseSetSpec(spec string) (Mapping, error) {
 	name, rest, ok := strings.Cut(spec, "=")
 	if !ok || name == "" || rest == "" {
-		return Mapping{}, fmt.Errorf("invalid mapping %q: expected NAME=service[:field]", spec)
+		return Mapping{}, fmt.Errorf("invalid mapping %q: expected NAME=service[/field]", spec)
 	}
-	// Optional per-mapping field override: service:field. The first ':' separates
-	// the service from the field, so a field always wins when present.
-	service, field, hasField := strings.Cut(rest, ":")
-	if hasField && (service == "" || field == "") {
-		return Mapping{}, fmt.Errorf("invalid mapping %q: expected NAME=service:field", spec)
+	service, field, err := SplitPath(rest)
+	if err != nil {
+		return Mapping{}, fmt.Errorf("invalid mapping %q: %w", spec, err)
 	}
 	return Mapping{EnvName: name, Service: service, Field: field}, nil
+}
+
+// SplitPath splits a "service[/field]" credential reference into its service and
+// optional field. It is the single home for the path separator, shared by
+// --set, the project manifest, and ${pass:...} templates.
+//
+//   - Slash is preferred and wins: if the reference contains '/', it is split on
+//     '/', and any ':' in it is a literal character (the fragility fix). Exactly
+//     one slash — two segments, service/field — is accepted for now; three or
+//     more segments error, reserving vault/service/field for a future multi-vault.
+//   - Otherwise the legacy colon form applies, byte-for-byte the original
+//     behavior: the first ':' separates service from an optional field.
+//   - With no separator at all, the whole reference is the service and the field
+//     is empty (the caller falls back to its default field).
+func SplitPath(ref string) (service, field string, err error) {
+	if strings.Contains(ref, "/") {
+		segs := strings.Split(ref, "/")
+		if len(segs) > 2 {
+			return "", "", fmt.Errorf("multi-segment paths not yet supported (expected service/field): %q", ref)
+		}
+		service, field = segs[0], segs[1]
+		if service == "" || field == "" {
+			return "", "", fmt.Errorf("expected service/field: %q", ref)
+		}
+		return service, field, nil
+	}
+
+	// Legacy colon form: the first ':' separates the service from the field, so a
+	// field always wins when present.
+	service, field, hasField := strings.Cut(ref, ":")
+	if hasField && (service == "" || field == "") {
+		return "", "", fmt.Errorf("expected service:field: %q", ref)
+	}
+	return service, field, nil
 }
 
 // DeriveEnvName converts a service name into an environment variable name:

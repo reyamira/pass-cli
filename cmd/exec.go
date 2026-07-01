@@ -36,11 +36,14 @@ There are two ways to map credentials to environment variables:
   pass-cli exec openai-api -- python train.py   # sets OPENAI_API
 
 The -f/--field flag selects which field to inject (default: password) and
-applies to every mapping. A single mapping can override it with a ':field'
+applies to every mapping. A single mapping can override it with a '/field'
 suffix, which is how you inject two fields of the same entry as separate
 variables (e.g. a database username and password):
 
-  pass-cli exec --set DB_USER=postgres:username --set DB_PASSWORD=postgres:password -- ./run.sh
+  pass-cli exec --set DB_USER=postgres/username --set DB_PASSWORD=postgres/password -- ./run.sh
+
+The legacy ':field' separator ('postgres:password') is still accepted, but '/'
+is preferred: in slash form any ':' in the service name is a literal character.
 
 Everything after '--' is the command to run; pass-cli writes nothing of its
 own to stdout, and the child's exit code is propagated unchanged.
@@ -60,7 +63,7 @@ it is not process isolation.`,
   pass-cli exec --set DB_USER=postgres --field username -- ./run-migration.sh
 
   # Inject two fields of one entry as separate variables (per-mapping field override)
-  pass-cli exec --set DB_USER=postgres:username --set DB_PASSWORD=postgres:password -- ./run-migration.sh
+  pass-cli exec --set DB_USER=postgres/username --set DB_PASSWORD=postgres/password -- ./run-migration.sh
 
   # Convenience form: service name -> env name (openai-api -> OPENAI_API)
   pass-cli exec openai-api -- python train.py`,
@@ -70,7 +73,7 @@ it is not process isolation.`,
 
 func init() {
 	rootCmd.AddCommand(execCmd)
-	execCmd.Flags().StringArrayVar(&execSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service[:field] (repeatable)")
+	execCmd.Flags().StringArrayVar(&execSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service[/field] (repeatable; ':field' also accepted)")
 	execCmd.Flags().StringVarP(&execField, "field", "f", "password", "field to inject for all mappings (username, password, category, url, notes, service)")
 }
 

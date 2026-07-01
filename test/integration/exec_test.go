@@ -179,6 +179,31 @@ func TestIntegration_Exec_PerMappingField(t *testing.T) {
 	}
 }
 
+// TestIntegration_Exec_PerMappingFieldSlash verifies the preferred slash
+// separator (service/field) works end-to-end through the real binary, exactly
+// like the colon form above. The colon test stays as the back-compat proof.
+func TestIntegration_Exec_PerMappingFieldSlash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses POSIX sh")
+	}
+
+	configPath, password, service, secret := setupExecVault(t)
+
+	stdin := helpers.BuildUnlockStdin(password)
+	stdout, stderr, err := helpers.RunCmd(t, binaryPath, configPath, stdin,
+		"exec",
+		"--set", "DB_USER="+service+"/username",
+		"--set", "DB_PASSWORD="+service+"/password",
+		"--", "sh", "-c", `printf '%s:%s' "$DB_USER" "$DB_PASSWORD"`)
+	if err != nil {
+		t.Fatalf("exec failed: %v\nStderr: %s", err, stderr)
+	}
+	want := "execuser:" + secret
+	if strings.TrimSpace(stdout) != want {
+		t.Errorf("slash per-mapping field: stdout = %q, want %q", strings.TrimSpace(stdout), want)
+	}
+}
+
 // TestIntegration_Exec_MissingDashTerminator verifies a clear error when no "--"
 // separates the command.
 func TestIntegration_Exec_MissingDashTerminator(t *testing.T) {
