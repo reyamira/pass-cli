@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  pass-cli background agent — launchd LaunchAgent (template, not auto-installed).
+
+  Install:
+    cp packaging/launchd/com.reyamira.pass-cli.agent.plist ~/Library/LaunchAgents/
+    # edit the ProgramArguments path below to your pass-cli binary
+    launchctl load ~/Library/LaunchAgents/com.reyamira.pass-cli.agent.plist
+
+  REQUIRES KEYCHAIN UNLOCK. A LaunchAgent has no terminal to prompt for the master
+  password, so set up keychain unlock (`pass-cli keychain enable`) first; otherwise
+  the agent cannot unlock at startup.
+
+  macOS memory hardening (mlock) is not yet implemented (planned); the agent runs
+  with its default posture on macOS.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.reyamira.pass-cli.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/pass-cli</string>
+        <string>agent</string>
+        <string>--idle</string>
+        <string>15m</string>
+        <string>--max-ttl</string>
+        <string>8h</string>
+    </array>
+    <!-- Start at login; do not auto-restart on a clean auto-lock exit. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+</dict>
+</plist>
