@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -9,6 +10,18 @@ import (
 	"github.com/arimxyer/pass-cli/internal/envmap"
 )
 
+// shortSocketDir returns a short base dir for a unix socket. Unix socket paths have
+// a ~104-char limit on macOS/BSD, and t.TempDir() embeds the long test name.
+func shortSocketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "pc")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 // startTestAgent spins up a real socket-backed agent on a temp path and returns a
 // stop func. PASS_CLI_AGENT_SOCK points SocketPath()/DialResolver at it.
 func startTestAgent(t *testing.T) func() {
@@ -16,7 +29,7 @@ func startTestAgent(t *testing.T) func() {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix-socket transport; Windows named pipe is Phase 2f")
 	}
-	sockPath := filepath.Join(t.TempDir(), "agent.sock")
+	sockPath := filepath.Join(shortSocketDir(t), "a.sock")
 	t.Setenv("PASS_CLI_AGENT_SOCK", sockPath)
 
 	ln, err := Listen(SocketPath())
@@ -67,7 +80,7 @@ func TestDialResolver_FallbackWhenAbsent(t *testing.T) {
 		t.Skip("unix-socket transport")
 	}
 	// Point at a path with no listener.
-	t.Setenv("PASS_CLI_AGENT_SOCK", filepath.Join(t.TempDir(), "absent.sock"))
+	t.Setenv("PASS_CLI_AGENT_SOCK", filepath.Join(shortSocketDir(t), "x.sock"))
 	if _, ok := DialResolver(); ok {
 		t.Error("expected DialResolver to report unreachable when no agent is listening")
 	}

@@ -16,6 +16,19 @@ import (
 	"github.com/arimxyer/pass-cli/test/helpers"
 )
 
+// shortSocketPath returns a unix-socket path under a short base dir. Unix socket
+// paths have a ~104-char limit on macOS/BSD, and t.TempDir() embeds the (long)
+// test name, so it can overflow — os.MkdirTemp with a short prefix stays well under.
+func shortSocketPath(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "pc")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return filepath.Join(dir, "a.sock")
+}
+
 // startAgent launches `pass-cli agent` in the background on a temp socket, unlocks
 // it via stdin, waits for the socket to appear (which happens only after unlock),
 // and returns the socket path plus a stop func.
@@ -24,7 +37,7 @@ func startAgent(t *testing.T, configPath, password string) (sockPath string, sto
 	if runtime.GOOS == "windows" {
 		t.Skip("agent uses a unix socket; Windows named pipe is Phase 2f")
 	}
-	sockPath = filepath.Join(t.TempDir(), "agent.sock")
+	sockPath = shortSocketPath(t)
 
 	cmd := exec.Command(binaryPath, "agent", "--idle", "1h", "--max-ttl", "1h")
 	cmd.Stdin = strings.NewReader(helpers.BuildUnlockStdin(password))
