@@ -159,9 +159,9 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Standard list mode (existing behavior)
-	// Sort by service name
+	// Sort by service name (case-insensitive)
 	sort.Slice(metadata, func(i, j int) bool {
-		return metadata[i].Service < metadata[j].Service
+		return lessFold(metadata[i].Service, metadata[j].Service)
 	})
 
 	// Output in requested format
@@ -382,7 +382,7 @@ func groupCredentialsByProject(metadata []vault.CredentialMetadata) map[string][
 		for cred := range credSet {
 			creds = append(creds, cred)
 		}
-		sort.Strings(creds)
+		sort.Slice(creds, func(i, j int) bool { return lessFold(creds[i], creds[j]) })
 		result[project] = creds
 	}
 
@@ -415,7 +415,7 @@ func outputByProjectTable(projects map[string][]string) error {
 	for project := range projects {
 		projectNames = append(projectNames, project)
 	}
-	sort.Strings(projectNames)
+	sort.Slice(projectNames, func(i, j int) bool { return lessFold(projectNames[i], projectNames[j]) })
 
 	// Display each project group
 	for _, project := range projectNames {
@@ -469,7 +469,7 @@ func outputByProjectSimple(projects map[string][]string) error {
 	for project := range projects {
 		projectNames = append(projectNames, project)
 	}
-	sort.Strings(projectNames)
+	sort.Slice(projectNames, func(i, j int) bool { return lessFold(projectNames[i], projectNames[j]) })
 
 	// Output each project on one line
 	for _, project := range projectNames {
@@ -478,4 +478,15 @@ func outputByProjectSimple(projects map[string][]string) error {
 	}
 
 	return nil
+}
+
+// lessFold reports whether a should sort before b, compared case-insensitively.
+// It falls back to a case-sensitive comparison as a tie-break so that strings
+// differing only in case keep a stable, deterministic order.
+func lessFold(a, b string) bool {
+	la, lb := strings.ToLower(a), strings.ToLower(b)
+	if la != lb {
+		return la < lb
+	}
+	return a < b
 }

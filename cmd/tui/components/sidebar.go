@@ -2,6 +2,7 @@ package components
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/arimxyer/pass-cli/cmd/tui/models"
 	"github.com/arimxyer/pass-cli/cmd/tui/styles"
@@ -9,6 +10,17 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
+
+// lessFold reports whether a should sort before b, compared case-insensitively.
+// It falls back to a case-sensitive comparison as a tie-break so that strings
+// differing only in case keep a stable, deterministic order.
+func lessFold(a, b string) bool {
+	la, lb := strings.ToLower(a), strings.ToLower(b)
+	if la != lb {
+		return la < lb
+	}
+	return a < b
+}
 
 // NodeReference identifies the type and value of a tree node.
 // Used to distinguish categories from credentials without relying on tree position.
@@ -96,7 +108,10 @@ func (s *Sidebar) Refresh() {
 	for category := range groups {
 		categories = append(categories, category)
 	}
-	sort.Strings(categories) // Sort categories alphabetically
+	// Sort categories alphabetically (case-insensitive)
+	sort.Slice(categories, func(i, j int) bool {
+		return lessFold(categories[i], categories[j])
+	})
 
 	// Build category nodes with credential children
 	for _, category := range categories {
@@ -110,10 +125,10 @@ func (s *Sidebar) Refresh() {
 			SetReference(NodeReference{Kind: "category", Value: category}).
 			SetExpanded(false) // Collapsed by default
 
-		// Sort credentials within category for deterministic ordering
+		// Sort credentials within category alphabetically (case-insensitive)
 		credList := groups[category]
 		sort.Slice(credList, func(i, j int) bool {
-			return credList[i].Service < credList[j].Service
+			return lessFold(credList[i].Service, credList[j].Service)
 		})
 
 		// Add credential nodes from sorted list

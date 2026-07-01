@@ -220,12 +220,12 @@ func formatFieldCounts(fieldCounts map[string]int) string {
 		return "-"
 	}
 
-	// Sort field names for consistent output
+	// Sort field names for consistent output (case-insensitive)
 	fields := make([]string, 0, len(fieldCounts))
 	for field := range fieldCounts {
 		fields = append(fields, field)
 	}
-	sort.Strings(fields)
+	sort.Slice(fields, func(i, j int) bool { return lessFold(fields[i], fields[j]) })
 
 	// Build formatted string
 	parts := make([]string, 0, len(fields))

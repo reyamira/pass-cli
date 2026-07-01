@@ -107,12 +107,12 @@ func runVaultBackupPreview(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Found %d credential(s) in backup:\n\n", credCount)
 
-	// Sort service names alphabetically
+	// Sort service names alphabetically (case-insensitive)
 	services := make([]string, 0, credCount)
 	for service := range vaultData.Credentials {
 		services = append(services, service)
 	}
-	sort.Strings(services)
+	sort.Slice(services, func(i, j int) bool { return lessFold(services[i], services[j]) })
 
 	if previewVerbose {
 		// Verbose: show table with more details
