@@ -9,90 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/arimxyer/pass-cli/internal/vault"
+	"github.com/arimxyer/pass-cli/internal/envmap"
 )
-
-// TestResolveCredentialField verifies the shared field resolver covers every alias
-// used by both `get` and `exec`, returns the canonical name, and rejects bad fields.
-func TestResolveCredentialField(t *testing.T) {
-	cred := &vault.Credential{
-		Service:  "github",
-		Username: "octocat",
-		Password: []byte("s3cr3t-pw"),
-		Category: "vcs",
-		URL:      "https://github.com",
-		Notes:    "personal token",
-	}
-
-	tests := []struct {
-		field         string
-		wantValue     string
-		wantCanonical string
-	}{
-		{"username", "octocat", "username"},
-		{"user", "octocat", "username"},
-		{"u", "octocat", "username"},
-		{"password", "s3cr3t-pw", "password"},
-		{"pass", "s3cr3t-pw", "password"},
-		{"p", "s3cr3t-pw", "password"},
-		{"PASSWORD", "s3cr3t-pw", "password"}, // case-insensitive
-		{"category", "vcs", "category"},
-		{"cat", "vcs", "category"},
-		{"c", "vcs", "category"},
-		{"url", "https://github.com", "url"},
-		{"notes", "personal token", "notes"},
-		{"note", "personal token", "notes"},
-		{"n", "personal token", "notes"},
-		{"service", "github", "service"},
-		{"s", "github", "service"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.field, func(t *testing.T) {
-			value, canonical, err := resolveCredentialField(cred, tt.field)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if value != tt.wantValue {
-				t.Errorf("value = %q, want %q", value, tt.wantValue)
-			}
-			if canonical != tt.wantCanonical {
-				t.Errorf("canonical = %q, want %q", canonical, tt.wantCanonical)
-			}
-		})
-	}
-
-	t.Run("invalid field", func(t *testing.T) {
-		_, _, err := resolveCredentialField(cred, "totp")
-		if err == nil {
-			t.Fatal("expected error for invalid field, got nil")
-		}
-	})
-}
-
-// TestDeriveEnvName verifies service -> env var name derivation.
-func TestDeriveEnvName(t *testing.T) {
-	tests := []struct {
-		service string
-		want    string
-	}{
-		{"openai-api", "OPENAI_API"},
-		{"github", "GITHUB"},
-		{"aws.prod", "AWS_PROD"},
-		{"my service", "MY_SERVICE"},
-		{"api/v2:key", "API_V2_KEY"},
-		{"already_ok", "ALREADY_OK"},
-		{"GH123", "GH123"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.service, func(t *testing.T) {
-			if got := deriveEnvName(tt.service); got != tt.want {
-				t.Errorf("deriveEnvName(%q) = %q, want %q", tt.service, got, tt.want)
-			}
-		})
-	}
-}
 
 // TestParseExecArgs covers the credential-mapping / child-argv split, the
 // convenience form, and every error path, using a hand-set dash index.
@@ -102,7 +20,7 @@ func TestParseExecArgs(t *testing.T) {
 		sets         []string
 		args         []string
 		dashIdx      int
-		wantMappings []envMapping
+		wantMappings []envmap.Mapping
 		wantChild    []string
 		wantErr      bool
 	}{
@@ -111,7 +29,7 @@ func TestParseExecArgs(t *testing.T) {
 			sets:         []string{"GITHUB_TOKEN=github"},
 			args:         []string{"gh", "repo", "list"},
 			dashIdx:      0,
-			wantMappings: []envMapping{{"GITHUB_TOKEN", "github", ""}},
+			wantMappings: []envmap.Mapping{{EnvName: "GITHUB_TOKEN", Service: "github"}},
 			wantChild:    []string{"gh", "repo", "list"},
 		},
 		{
@@ -119,7 +37,7 @@ func TestParseExecArgs(t *testing.T) {
 			sets:         []string{"AWS_ACCESS_KEY_ID=aws-id", "AWS_SECRET_ACCESS_KEY=aws-secret"},
 			args:         []string{"aws", "s3", "ls"},
 			dashIdx:      0,
-			wantMappings: []envMapping{{"AWS_ACCESS_KEY_ID", "aws-id", ""}, {"AWS_SECRET_ACCESS_KEY", "aws-secret", ""}},
+			wantMappings: []envmap.Mapping{{EnvName: "AWS_ACCESS_KEY_ID", Service: "aws-id"}, {EnvName: "AWS_SECRET_ACCESS_KEY", Service: "aws-secret"}},
 			wantChild:    []string{"aws", "s3", "ls"},
 		},
 		{
@@ -127,7 +45,7 @@ func TestParseExecArgs(t *testing.T) {
 			sets:         nil,
 			args:         []string{"openai-api", "python", "train.py"},
 			dashIdx:      1,
-			wantMappings: []envMapping{{"OPENAI_API", "openai-api", ""}},
+			wantMappings: []envmap.Mapping{{EnvName: "OPENAI_API", Service: "openai-api"}},
 			wantChild:    []string{"python", "train.py"},
 		},
 		{
@@ -135,7 +53,7 @@ func TestParseExecArgs(t *testing.T) {
 			sets:         []string{"DB_USER=postgres:username"},
 			args:         []string{"mycmd"},
 			dashIdx:      0,
-			wantMappings: []envMapping{{"DB_USER", "postgres", "username"}},
+			wantMappings: []envmap.Mapping{{EnvName: "DB_USER", Service: "postgres", Field: "username"}},
 			wantChild:    []string{"mycmd"},
 		},
 		{
@@ -143,7 +61,7 @@ func TestParseExecArgs(t *testing.T) {
 			sets:         []string{"DB_USER=pg:username", "DB_PASSWORD=pg:password"},
 			args:         []string{"./run.sh"},
 			dashIdx:      0,
-			wantMappings: []envMapping{{"DB_USER", "pg", "username"}, {"DB_PASSWORD", "pg", "password"}},
+			wantMappings: []envmap.Mapping{{EnvName: "DB_USER", Service: "pg", Field: "username"}, {EnvName: "DB_PASSWORD", Service: "pg", Field: "password"}},
 			wantChild:    []string{"./run.sh"},
 		},
 		{
@@ -230,7 +148,7 @@ func TestParseExecArgs(t *testing.T) {
 // returned by cmd.ArgsLenAtDash() splits the positional args exactly where
 // parseExecArgs assumes. This pins our one external assumption empirically.
 func TestExecCmd_ArgsLenAtDash(t *testing.T) {
-	parse := func(argv []string) (mappings []envMapping, child []string, parseErr, execErr error) {
+	parse := func(argv []string) (mappings []envmap.Mapping, child []string, parseErr, execErr error) {
 		var sets []string
 		c := &cobra.Command{
 			Use:  "exec",
@@ -254,7 +172,7 @@ func TestExecCmd_ArgsLenAtDash(t *testing.T) {
 		if execErr != nil || parseErr != nil {
 			t.Fatalf("execErr=%v parseErr=%v", execErr, parseErr)
 		}
-		if !equalMappings(mappings, []envMapping{{"K", "svc", ""}}) {
+		if !equalMappings(mappings, []envmap.Mapping{{EnvName: "K", Service: "svc"}}) {
 			t.Errorf("mappings = %v", mappings)
 		}
 		if !equalStrings(child, []string{"mycmd", "arg1"}) {
@@ -267,7 +185,7 @@ func TestExecCmd_ArgsLenAtDash(t *testing.T) {
 		if execErr != nil || parseErr != nil {
 			t.Fatalf("execErr=%v parseErr=%v", execErr, parseErr)
 		}
-		if !equalMappings(mappings, []envMapping{{"SVC", "svc", ""}}) {
+		if !equalMappings(mappings, []envmap.Mapping{{EnvName: "SVC", Service: "svc"}}) {
 			t.Errorf("mappings = %v", mappings)
 		}
 		if !equalStrings(child, []string{"mycmd"}) {
@@ -280,7 +198,7 @@ func TestExecCmd_ArgsLenAtDash(t *testing.T) {
 		if execErr != nil || parseErr != nil {
 			t.Fatalf("execErr=%v parseErr=%v", execErr, parseErr)
 		}
-		if !equalMappings(mappings, []envMapping{{"K", "svc", ""}}) {
+		if !equalMappings(mappings, []envmap.Mapping{{EnvName: "K", Service: "svc"}}) {
 			t.Errorf("mappings = %v", mappings)
 		}
 		if !equalStrings(child, []string{"mycmd", "--child-flag", "v"}) {
@@ -402,7 +320,7 @@ func trimNewline(s string) string {
 	return s
 }
 
-func equalMappings(a, b []envMapping) bool {
+func equalMappings(a, b []envmap.Mapping) bool {
 	if len(a) != len(b) {
 		return false
 	}

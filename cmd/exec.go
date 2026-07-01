@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/arimxyer/pass-cli/internal/crypto"
+	"github.com/arimxyer/pass-cli/internal/envmap"
+	"github.com/arimxyer/pass-cli/internal/resolver"
 	"github.com/arimxyer/pass-cli/internal/vault"
 )
 
@@ -74,19 +74,12 @@ func init() {
 	execCmd.Flags().StringVarP(&execField, "field", "f", "password", "field to inject for all mappings (username, password, category, url, notes, service)")
 }
 
-// envMapping pairs a target environment variable name with the credential service
-// whose field value should be injected into it. field is the optional per-mapping
-// field override ("" means fall back to the global --field flag).
-type envMapping struct {
-	envName string
-	service string
-	field   string
-}
-
 // parseExecArgs splits the parsed positional args into credential mappings and the
 // child command argv. dashIdx is cmd.ArgsLenAtDash(): the number of positional args
-// that appeared before the "--" terminator (or -1 if there was no "--").
-func parseExecArgs(sets []string, args []string, dashIdx int) (mappings []envMapping, childArgv []string, err error) {
+// that appeared before the "--" terminator (or -1 if there was no "--"). The
+// per-spec grammar lives in internal/envmap; this function owns only the exec-CLI
+// shape (the "--" split and the --set-vs-positional forms).
+func parseExecArgs(sets []string, args []string, dashIdx int) (mappings []envmap.Mapping, childArgv []string, err error) {
 	var preDash []string
 	if dashIdx < 0 {
 		// No "--" terminator at all: we cannot tell the service from the command.
@@ -104,17 +97,11 @@ func parseExecArgs(sets []string, args []string, dashIdx int) (mappings []envMap
 			return nil, nil, fmt.Errorf("cannot combine a positional <service> (%q) with --set; use one form or the other", preDash[0])
 		}
 		for _, s := range sets {
-			name, spec, ok := strings.Cut(s, "=")
-			if !ok || name == "" || spec == "" {
-				return nil, nil, fmt.Errorf("invalid --set value %q: expected ENV_NAME=service[:field]", s)
+			m, perr := envmap.ParseSetSpec(s)
+			if perr != nil {
+				return nil, nil, perr
 			}
-			// Optional per-mapping field override: service:field. The first ':'
-			// separates the service from the field, so a field always wins when present.
-			service, field, hasField := strings.Cut(spec, ":")
-			if hasField && (service == "" || field == "") {
-				return nil, nil, fmt.Errorf("invalid --set value %q: expected ENV_NAME=service:field", s)
-			}
-			mappings = append(mappings, envMapping{envName: name, service: service, field: field})
+			mappings = append(mappings, m)
 		}
 		return mappings, childArgv, nil
 	}
@@ -124,28 +111,12 @@ func parseExecArgs(sets []string, args []string, dashIdx int) (mappings []envMap
 		return nil, nil, errors.New("expected exactly one <service> before '--' (or use --set ENV_NAME=service)")
 	}
 	service := preDash[0]
-	envName := deriveEnvName(service)
+	envName := envmap.DeriveEnvName(service)
 	if envName == "" {
 		return nil, nil, fmt.Errorf("cannot derive an environment variable name from service %q; use --set ENV_NAME=%s", service, service)
 	}
-	mappings = append(mappings, envMapping{envName: envName, service: service})
+	mappings = append(mappings, envmap.Mapping{EnvName: envName, Service: service})
 	return mappings, childArgv, nil
-}
-
-// deriveEnvName converts a service name into an environment variable name:
-// uppercased, with every non-alphanumeric ASCII character replaced by '_'.
-// e.g. "openai-api" -> "OPENAI_API".
-func deriveEnvName(service string) string {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(service) {
-		switch {
-		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		default:
-			b.WriteRune('_')
-		}
-	}
-	return b.String()
 }
 
 // runChild executes the child process, inheriting the parent's stdio. It returns
@@ -200,21 +171,17 @@ func runExec(cmd *cobra.Command, args []string) error {
 	}
 	defer vaultService.Lock()
 
-	// Build the child's extra environment. exec is deliberately read-only: it does
-	// NOT call RecordFieldAccess or syncPushAfterCommand, so repeated invocations on
-	// a hot path don't mutate the vault hash and trigger a sync push every time.
-	extraEnv := make([]string, 0, len(mappings))
-	for _, m := range mappings {
-		// A per-mapping field (--set ENV=service:field) overrides the global --field.
-		field := m.field
-		if field == "" {
-			field = execField
-		}
-		entry, err := buildEnvEntry(vaultService, m, field)
-		if err != nil {
-			return err
-		}
-		extraEnv = append(extraEnv, entry)
+	// Build the child's extra environment via the shared resolver. exec is
+	// deliberately read-only: the resolver does NOT call RecordFieldAccess or
+	// syncPushAfterCommand, so repeated invocations on a hot path don't mutate the
+	// vault hash and trigger a sync push every time. The direct backend does not own
+	// the vault, so Close is a no-op; runExec owns unlock/Lock.
+	r := resolver.NewDirect(vaultService)
+	defer func() { _ = r.Close() }()
+
+	extraEnv, err := r.Resolve(mappings, execField)
+	if err != nil {
+		return err
 	}
 
 	exitCode, err := runChild(childArgv, extraEnv)
@@ -229,23 +196,4 @@ func runExec(cmd *cobra.Command, args []string) error {
 		os.Exit(exitCode)
 	}
 	return nil
-}
-
-// buildEnvEntry fetches one credential, resolves the requested field, and returns
-// the "ENV_NAME=value" string. The credential's secret bytes are cleared before the
-// function returns; the field value is read first, so the wiped bytes never affect
-// the returned string.
-func buildEnvEntry(vaultService *vault.VaultService, m envMapping, field string) (string, error) {
-	// GetCredential returns a deep copy, so clearing Password does not touch the vault.
-	cred, err := vaultService.GetCredential(m.service, false)
-	if err != nil {
-		return "", fmt.Errorf("failed to get credential %q: %w", m.service, err)
-	}
-	defer crypto.ClearBytes(cred.Password)
-
-	value, _, err := resolveCredentialField(cred, field)
-	if err != nil {
-		return "", err
-	}
-	return m.envName + "=" + value, nil
 }
