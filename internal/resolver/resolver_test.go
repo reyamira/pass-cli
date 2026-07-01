@@ -45,12 +45,12 @@ func TestDirectResolver_ResolvesFields(t *testing.T) {
 	r := NewDirect(vs)
 	defer func() { _ = r.Close() }()
 
-	got, err := r.Resolve([]envmap.Mapping{
+	got, err := ResolveEnv(r, []envmap.Mapping{
 		{EnvName: "GITHUB_TOKEN", Service: "github"},               // default field
 		{EnvName: "GH_USER", Service: "github", Field: "username"}, // per-mapping override
 	}, "password")
 	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("ResolveEnv: %v", err)
 	}
 
 	want := []string{"GITHUB_TOKEN=s3cr3t-pw", "GH_USER=octocat"}
@@ -73,12 +73,34 @@ func TestDirectResolver_DefaultFieldFallback(t *testing.T) {
 	r := NewDirect(vs)
 	defer func() { _ = r.Close() }()
 
-	got, err := r.Resolve([]envmap.Mapping{{EnvName: "GH", Service: "github"}}, "username")
+	got, err := ResolveEnv(r, []envmap.Mapping{{EnvName: "GH", Service: "github"}}, "username")
 	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("ResolveEnv: %v", err)
 	}
 	if len(got) != 1 || got[0] != "GH=octocat" {
 		t.Errorf("got %v, want [GH=octocat]", got)
+	}
+}
+
+// TestDirectResolver_ResolveValuesOrder verifies ResolveValues returns bare values
+// in mapping order (the primitive the template renderer builds on).
+func TestDirectResolver_ResolveValuesOrder(t *testing.T) {
+	vs, _ := newUnlockedVault(t)
+	defer vs.Lock()
+
+	r := NewDirect(vs)
+	defer func() { _ = r.Close() }()
+
+	got, err := r.ResolveValues([]envmap.Mapping{
+		{Service: "github", Field: "username"},
+		{Service: "github"}, // default field
+	}, "password")
+	if err != nil {
+		t.Fatalf("ResolveValues: %v", err)
+	}
+	want := []string{"octocat", "s3cr3t-pw"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("ResolveValues = %v, want %v", got, want)
 	}
 }
 
@@ -96,7 +118,7 @@ func TestDirectResolver_ReadOnly_DoesNotMutateVault(t *testing.T) {
 
 	r := NewDirect(vs)
 	defer func() { _ = r.Close() }()
-	if _, err := r.Resolve([]envmap.Mapping{{EnvName: "GH", Service: "github"}}, "password"); err != nil {
+	if _, err := r.ResolveValues([]envmap.Mapping{{EnvName: "GH", Service: "github"}}, "password"); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 
@@ -117,7 +139,7 @@ func TestDirectResolver_UnknownService(t *testing.T) {
 	r := NewDirect(vs)
 	defer func() { _ = r.Close() }()
 
-	if _, err := r.Resolve([]envmap.Mapping{{EnvName: "X", Service: "nonexistent"}}, "password"); err == nil {
+	if _, err := r.ResolveValues([]envmap.Mapping{{EnvName: "X", Service: "nonexistent"}}, "password"); err == nil {
 		t.Fatal("expected error for unknown service, got nil")
 	}
 }
@@ -130,7 +152,7 @@ func TestDirectResolver_InvalidField(t *testing.T) {
 	r := NewDirect(vs)
 	defer func() { _ = r.Close() }()
 
-	if _, err := r.Resolve([]envmap.Mapping{{EnvName: "X", Service: "github", Field: "totp"}}, "password"); err == nil {
+	if _, err := r.ResolveValues([]envmap.Mapping{{EnvName: "X", Service: "github", Field: "totp"}}, "password"); err == nil {
 		t.Fatal("expected error for invalid field, got nil")
 	}
 }

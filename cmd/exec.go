@@ -182,7 +182,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 	r := resolver.NewDirect(vaultService)
 	defer func() { _ = r.Close() }()
 
-	extraEnv, err := r.Resolve(mappings, execField)
+	extraEnv, err := resolver.ResolveEnv(r, mappings, execField)
 	if err != nil {
 		return err
 	}
