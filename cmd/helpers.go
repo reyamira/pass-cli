@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/arimxyer/pass-cli/internal/crypto"
 	"github.com/arimxyer/pass-cli/internal/recovery"
+	"github.com/arimxyer/pass-cli/internal/timing"
 	"github.com/arimxyer/pass-cli/internal/vault"
 	"os"
 	"path/filepath"
@@ -411,6 +412,7 @@ func unlockVault(vaultService *vault.VaultService) error {
 //     touches only the password + pre-read key params, so it overlaps the pull and
 //     we decrypt after the join (Tier 2).
 func unlockVaultWithSync(vaultService *vault.VaultService) error {
+	defer timing.Track("unlockVaultWithSync (wall)")()
 	// No pull to overlap (sync disabled or --offline): today's exact behavior.
 	if IsOffline() || !vaultService.IsSyncEnabled() {
 		syncPullBeforeUnlock(vaultService) // no-op in these cases

@@ -17,6 +17,7 @@ import (
 	"github.com/arimxyer/pass-cli/internal/security"
 	"github.com/arimxyer/pass-cli/internal/storage"
 	intsync "github.com/arimxyer/pass-cli/internal/sync"
+	"github.com/arimxyer/pass-cli/internal/timing"
 
 	"github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/argon2"
@@ -690,6 +691,7 @@ func (v *VaultService) InitializeWithRecovery(masterPassword []byte, useKeychain
 // T011: Updated signature to accept []byte, T015: Added deferred cleanup
 // T036e: Auto-rollback on incomplete migration detection
 func (v *VaultService) Unlock(masterPassword []byte) error {
+	defer timing.Track("vault.Unlock (derive+decrypt)")()
 	defer crypto.ClearBytes(masterPassword) // T015: Ensure cleanup even on error
 
 	if v.unlocked {
@@ -972,6 +974,7 @@ func (v *VaultService) PrepareUnlock() (*PreparedUnlock, error) {
 // parameters (no file access) — safe to call while a sync pull is in flight.
 // The returned key is handed to UnlockWithPreparedKey, which clears it.
 func (p *PreparedUnlock) DeriveDataKey(password []byte) ([]byte, error) {
+	defer timing.Track("PBKDF2 derive (keychain)")()
 	return p.storageService.DeriveDataKey(string(password), p.params)
 }
 

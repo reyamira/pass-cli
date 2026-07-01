@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/arimxyer/pass-cli/internal/config"
+	"github.com/arimxyer/pass-cli/internal/timing"
 )
 
 // ErrSyncConflict indicates both local and remote have changed since last sync.
@@ -217,6 +218,7 @@ func (s *Service) Push(vaultDir string) error {
 
 // CheckRemoteMetadata fetches remote file metadata using rclone lsjson.
 func (s *Service) CheckRemoteMetadata() ([]RemoteFileInfo, error) {
+	defer timing.Track("rclone lsjson (probe)")()
 	// Note: no "--hash" flag — RemoteFileInfo carries no hash field and no
 	// decision uses a remote hash (skip compares ModTime+Size; conflict detection
 	// uses a local sha256 via HashFile). Requesting it only adds backend cost.
@@ -235,6 +237,7 @@ func (s *Service) CheckRemoteMetadata() ([]RemoteFileInfo, error) {
 // SmartPull checks remote metadata and only pulls if remote has changed.
 // Returns ErrSyncConflict if both local and remote have changed.
 func (s *Service) SmartPull(vaultPath string) error {
+	defer timing.Track("SmartPull total")()
 	if !s.IsEnabled() {
 		return nil
 	}
@@ -313,7 +316,10 @@ func (s *Service) SmartPull(vaultPath string) error {
 		return fmt.Errorf("failed to create vault directory: %w", err)
 	}
 
-	if err := s.executor.RunNoOutput("rclone", "sync", s.config.Remote, vaultDir, "--exclude", syncStateFile); err != nil {
+	if err := func() error {
+		defer timing.Track("rclone sync (pull)")()
+		return s.executor.RunNoOutput("rclone", "sync", s.config.Remote, vaultDir, "--exclude", syncStateFile)
+	}(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: sync pull failed: %v\n", err)
 		return nil
 	}
