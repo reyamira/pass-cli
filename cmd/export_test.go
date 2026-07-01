@@ -127,6 +127,7 @@ func TestParseExportArgs(t *testing.T) {
 		name        string
 		sets        []string
 		positionals []string
+		hasFrom     bool
 		want        []envmap.Mapping
 		wantErr     bool
 	}{
@@ -134,6 +135,17 @@ func TestParseExportArgs(t *testing.T) {
 			name: "single --set",
 			sets: []string{"GITHUB_TOKEN=github"},
 			want: []envmap.Mapping{{EnvName: "GITHUB_TOKEN", Service: "github"}},
+		},
+		{
+			name:    "from alone allows empty --set/positional",
+			hasFrom: true,
+			want:    nil,
+		},
+		{
+			name:        "combine positional and --from",
+			positionals: []string{"svc"},
+			hasFrom:     true,
+			wantErr:     true,
 		},
 		{
 			name: "slash field override",
@@ -169,7 +181,7 @@ func TestParseExportArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseExportArgs(tt.sets, tt.positionals)
+			got, err := parseExportArgs(tt.sets, tt.positionals, tt.hasFrom)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got %+v", got)

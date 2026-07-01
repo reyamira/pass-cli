@@ -17,6 +17,7 @@ var (
 	exportSets   []string
 	exportField  string
 	exportFormat string
+	exportFrom   []string
 )
 
 var exportCmd = &cobra.Command{
@@ -39,6 +40,11 @@ The mapping grammar is the same as 'exec':
 
 The -f/--field flag selects which field to export (default: password) and applies
 to every mapping; a single mapping can override it with a '/field' suffix.
+
+--from reads a committable '.pass-cli.toml' manifest ([env] table of
+ENV_NAME = "service/field" references) so a .envrc need not repeat --set chains:
+
+  eval "$(pass-cli export --from .pass-cli.toml)"
 
 --format selects the shell syntax:
   sh          export NAME='value'      (default; POSIX sh/bash/zsh, for eval)
@@ -67,21 +73,24 @@ func init() {
 	exportCmd.Flags().StringArrayVar(&exportSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service[/field] (repeatable; ':field' also accepted)")
 	exportCmd.Flags().StringVarP(&exportField, "field", "f", "password", "field to export for all mappings (username, password, category, url, notes, service)")
 	exportCmd.Flags().StringVar(&exportFormat, "format", "sh", "shell syntax: sh, fish, or powershell")
+	exportCmd.Flags().StringArrayVar(&exportFrom, "from", nil, "read ENV_NAME=service/field mappings from a .pass-cli.toml manifest (repeatable)")
 }
 
 // parseExportArgs turns --set specs or positional services into mappings and
-// validates every resulting env name. Names are validated here, before the vault
-// is opened, so a bad name fails fast without fetching any secret. Unlike exec,
+// validates every resulting env name. hasFrom reports whether a --from manifest
+// also supplies mappings (read separately in runExport): when true, an empty
+// --set/positional set is allowed. Names are validated here, before the vault is
+// opened, so a bad name fails fast without fetching any secret. Unlike exec,
 // export emits shell text to be eval'd, so an invalid or attacker-controlled name
 // is a shell-injection vector — hence the ValidEnvName gate.
-func parseExportArgs(sets, positionals []string) ([]envmap.Mapping, error) {
-	var mappings []envmap.Mapping
+func parseExportArgs(sets, positionals []string, hasFrom bool) ([]envmap.Mapping, error) {
+	if (len(sets) > 0 || hasFrom) && len(positionals) > 0 {
+		return nil, fmt.Errorf("cannot combine a positional <service> (%q) with --set/--from", positionals[0])
+	}
 
+	var mappings []envmap.Mapping
 	switch {
 	case len(sets) > 0:
-		if len(positionals) > 0 {
-			return nil, fmt.Errorf("cannot combine a positional <service> (%q) with --set; use one form or the other", positionals[0])
-		}
 		for _, s := range sets {
 			m, err := envmap.ParseSetSpec(s)
 			if err != nil {
@@ -95,7 +104,9 @@ func parseExportArgs(sets, positionals []string) ([]envmap.Mapping, error) {
 			mappings = append(mappings, envmap.Mapping{EnvName: name, Service: svc})
 		}
 	default:
-		return nil, errors.New("specify a <service> or --set ENV_NAME=service")
+		if !hasFrom {
+			return nil, errors.New("specify a <service>, --set ENV_NAME=service, or --from <manifest>")
+		}
 	}
 
 	for _, m := range mappings {
@@ -112,10 +123,17 @@ func runExport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	mappings, err := parseExportArgs(exportSets, args)
+	mappings, err := parseExportArgs(exportSets, args, len(exportFrom) > 0)
 	if err != nil {
 		return err
 	}
+	// Manifest mappings (already name-validated by ParseManifest) extend the
+	// --set/positional mappings.
+	manifestMappings, err := readManifests(exportFrom)
+	if err != nil {
+		return err
+	}
+	mappings = append(mappings, manifestMappings...)
 
 	vaultPath := GetVaultPath()
 	if _, err := os.Stat(vaultPath); os.IsNotExist(err) {

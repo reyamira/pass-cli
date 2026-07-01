@@ -18,6 +18,7 @@ var (
 	execSets     []string
 	execField    string
 	execEnvFiles []string
+	execFrom     []string
 )
 
 var execCmd = &cobra.Command{
@@ -57,6 +58,13 @@ This resolves composite values an ENV_NAME=service mapping cannot express:
 --env-file composes with --set; blank lines and '#' comments are ignored, and each
 KEY is validated as an environment variable name.
 
+A fourth source is --from: a committable '.pass-cli.toml' manifest whose [env]
+table maps ENV_NAME = "service/field" (references only, never values), so a
+launcher or .envrc need not repeat long --set chains:
+
+  # .pass-cli.toml:  [env]\n  GITHUB_TOKEN = "github"\n  DB_PASSWORD = "postgres/password"
+  pass-cli exec --from .pass-cli.toml -- ./server
+
 Everything after '--' is the command to run; pass-cli writes nothing of its
 own to stdout, and the child's exit code is propagated unchanged.
 
@@ -88,16 +96,17 @@ func init() {
 	execCmd.Flags().StringArrayVar(&execSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service[/field] (repeatable; ':field' also accepted)")
 	execCmd.Flags().StringVarP(&execField, "field", "f", "password", "field to inject for all mappings (username, password, category, url, notes, service)")
 	execCmd.Flags().StringArrayVar(&execEnvFiles, "env-file", nil, "read KEY=${pass:service/field} template lines from a file (repeatable)")
+	execCmd.Flags().StringArrayVar(&execFrom, "from", nil, "read ENV_NAME=service/field mappings from a .pass-cli.toml manifest (repeatable)")
 }
 
 // parseExecArgs splits the parsed positional args into credential mappings and the
 // child command argv. dashIdx is cmd.ArgsLenAtDash(): the number of positional args
 // that appeared before the "--" terminator (or -1 if there was no "--"). The
 // per-spec grammar lives in internal/envmap; this function owns only the exec-CLI
-// shape (the "--" split and the --set-vs-positional forms). envFileCount is the
-// number of --env-file sources: when > 0, an empty --set/positional set is allowed
-// because the env-files supply the mappings instead.
-func parseExecArgs(sets []string, envFileCount int, args []string, dashIdx int) (mappings []envmap.Mapping, childArgv []string, err error) {
+// shape (the "--" split and the --set-vs-positional forms). otherSources is the
+// number of --env-file / --from sources: when > 0, an empty --set/positional set
+// is allowed because those sources supply the mappings instead.
+func parseExecArgs(sets []string, otherSources int, args []string, dashIdx int) (mappings []envmap.Mapping, childArgv []string, err error) {
 	var preDash []string
 	if dashIdx < 0 {
 		// No "--" terminator at all: we cannot tell the service from the command.
@@ -127,8 +136,8 @@ func parseExecArgs(sets []string, envFileCount int, args []string, dashIdx int) 
 	switch len(preDash) {
 	case 0:
 		// No --set and no positional: the env-files must supply the mappings.
-		if envFileCount == 0 {
-			return nil, nil, errors.New("no credentials to inject: use --set ENV_NAME=service, a positional <service>, or --env-file")
+		if otherSources == 0 {
+			return nil, nil, errors.New("no credentials to inject: use --set ENV_NAME=service, a positional <service>, --env-file, or --from")
 		}
 		return nil, childArgv, nil
 	case 1:
@@ -181,6 +190,24 @@ func readEnvFileTemplates(paths []string) ([]envFileEntry, error) {
 	return entries, nil
 }
 
+// readManifests parses ENV_NAME=service/field mappings from each .pass-cli.toml
+// manifest (--from). Env names and references are validated by envmap.ParseManifest.
+func readManifests(paths []string) ([]envmap.Mapping, error) {
+	var all []envmap.Mapping
+	for _, p := range paths {
+		data, err := os.ReadFile(p) // #nosec G304 -- user-specified manifest path
+		if err != nil {
+			return nil, fmt.Errorf("failed to read manifest %q: %w", p, err)
+		}
+		ms, err := envmap.ParseManifest(data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		all = append(all, ms...)
+	}
+	return all, nil
+}
+
 // runChild executes the child process, inheriting the parent's stdio. It returns
 // the child's exit code (0 on success) and a non-nil error only when the child
 // could not be started or completed abnormally (e.g. killed by a signal). This
@@ -208,16 +235,21 @@ func runChild(childArgv []string, extraEnv []string) (int, error) {
 }
 
 func runExec(cmd *cobra.Command, args []string) error {
-	mappings, childArgv, err := parseExecArgs(execSets, len(execEnvFiles), args, cmd.ArgsLenAtDash())
+	mappings, childArgv, err := parseExecArgs(execSets, len(execEnvFiles)+len(execFrom), args, cmd.ArgsLenAtDash())
 	if err != nil {
 		return err
 	}
-	// Read env-file templates (before touching the vault so a read/parse error
-	// fails fast). Their values are resolved after unlock.
+	// Read env-file templates and --from manifests (before touching the vault so a
+	// read/parse error fails fast). Their values are resolved after unlock.
 	envEntries, err := readEnvFileTemplates(execEnvFiles)
 	if err != nil {
 		return err
 	}
+	manifestMappings, err := readManifests(execFrom)
+	if err != nil {
+		return err
+	}
+	mappings = append(mappings, manifestMappings...)
 
 	vaultPath := GetVaultPath()
 
