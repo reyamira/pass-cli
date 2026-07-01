@@ -6,12 +6,53 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/arimxyer/pass-cli/internal/config"
 )
+
+// TestExecExecutor_RunTimeout verifies the metadata probe is bounded: a Run that
+// exceeds runTimeout is killed promptly and returns a clear "timed out" error
+// (which SmartPull degrades to serving the local vault). This is the guard
+// against a slow/hung remote (e.g. transient Google Drive latency) stalling
+// every synced command.
+func TestExecExecutor_RunTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses the POSIX `sleep` command")
+	}
+	e := &execExecutor{runTimeout: 100 * time.Millisecond}
+	start := time.Now()
+	_, err := e.Run("sleep", "10")
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected a timeout error, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("expected a 'timed out' error, got: %v", err)
+	}
+	if elapsed > 3*time.Second {
+		t.Errorf("timeout did not fire promptly: took %v (want << 10s)", elapsed)
+	}
+}
+
+// TestExecExecutor_RunWithinTimeout confirms a fast command still succeeds when a
+// timeout is configured (the bound only bites on overruns).
+func TestExecExecutor_RunWithinTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses the POSIX `echo` command")
+	}
+	e := &execExecutor{runTimeout: 5 * time.Second}
+	out, err := e.Run("echo", "ok")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(string(out), "ok") {
+		t.Errorf("expected output to contain 'ok', got %q", out)
+	}
+}
 
 // mockExecutor records calls and returns configured responses.
 type mockExecutor struct {
@@ -557,5 +598,186 @@ func TestSmartPush_WritesContentMarker(t *testing.T) {
 	}
 	if _, err := os.Stat(staleMarker); !os.IsNotExist(err) {
 		t.Errorf("stale marker should have been removed")
+	}
+}
+
+// --- TTL-gate tests (#2) ---
+
+// TestSmartPull_TTLSkipsProbeWhenRecent verifies the pre-unlock probe is skipped
+// (no rclone lsjson) when the remote was checked within the TTL window, and that
+// pullSkipped is set so a later push will do its own conflict check.
+func TestSmartPull_TTLSkipsProbeWhenRecent(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	_ = SaveState(tmpDir, &SyncState{LastPullCheck: time.Now()}) // just checked
+
+	mock := &mockExecutor{}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullTTL = 30 * time.Second
+
+	if err := service.SmartPull(vaultPath); err != nil {
+		t.Fatalf("SmartPull returned error: %v", err)
+	}
+	if len(mock.runCalls) != 0 {
+		t.Errorf("expected 0 Run calls (probe skipped by TTL), got %d", len(mock.runCalls))
+	}
+	if !service.pullSkipped {
+		t.Error("expected pullSkipped=true when the probe was TTL-gated")
+	}
+}
+
+// TestSmartPull_TTLExpiredProbes verifies the probe runs when the last check is
+// outside the TTL window.
+func TestSmartPull_TTLExpiredProbes(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	remoteTime := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	_ = SaveState(tmpDir, &SyncState{
+		LastPullCheck: time.Now().Add(-time.Hour), // stale
+		RemoteModTime: remoteTime,
+		RemoteSize:    100,
+	})
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{{Name: "vault.enc", Size: 100, ModTime: remoteTime}})
+
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullTTL = 30 * time.Second
+
+	if err := service.SmartPull(vaultPath); err != nil {
+		t.Fatalf("SmartPull returned error: %v", err)
+	}
+	if len(mock.runCalls) != 1 {
+		t.Errorf("expected 1 Run call (probe, TTL expired), got %d", len(mock.runCalls))
+	}
+	if service.pullSkipped {
+		t.Error("expected pullSkipped=false when the TTL expired")
+	}
+}
+
+// TestSmartPull_StampsLastPullCheckAfterProbe verifies a successful probe records
+// the check time so the gate can skip subsequent probes.
+func TestSmartPull_StampsLastPullCheckAfterProbe(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	remoteTime := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	_ = SaveState(tmpDir, &SyncState{RemoteModTime: remoteTime, RemoteSize: 100}) // no LastPullCheck
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{{Name: "vault.enc", Size: 100, ModTime: remoteTime}})
+
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullTTL = 30 * time.Second
+
+	if err := service.SmartPull(vaultPath); err != nil {
+		t.Fatalf("SmartPull returned error: %v", err)
+	}
+	st, err := LoadState(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if st.LastPullCheck.IsZero() {
+		t.Error("expected LastPullCheck to be stamped after a successful probe")
+	}
+}
+
+// TestSmartPush_ConflictWhenPullSkippedAndRemoteChanged is the safety test: when
+// the pre-unlock pull was TTL-skipped and the remote has since changed under a
+// diverged local vault, SmartPush must return ErrSyncConflict and push NOTHING —
+// no blind overwrite of the newer remote.
+func TestSmartPush_ConflictWhenPullSkippedAndRemoteChanged(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("local-modified"), 0600) // local diverged
+
+	oldTime := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	newTime := time.Date(2026, 1, 16, 12, 0, 0, 0, time.UTC)
+	_ = SaveState(tmpDir, &SyncState{
+		LastPushHash:  "hash-before-local-edit", // local hash differs → diverged
+		RemoteModTime: oldTime,
+		RemoteSize:    100,
+	})
+	// Remote changed (size/modtime differ from state) and carries no marker.
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{{Name: "vault.enc", Size: 200, ModTime: newTime}})
+
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullSkipped = true // simulate the pre-unlock pull having been TTL-skipped
+
+	pushed, err := service.SmartPush(vaultPath)
+	if !errors.Is(err, ErrSyncConflict) {
+		t.Errorf("expected ErrSyncConflict, got: %v", err)
+	}
+	if pushed {
+		t.Error("expected pushed=false on conflict")
+	}
+	if len(mock.runNoOutCalls) != 0 {
+		t.Errorf("SAFETY: expected 0 push calls on conflict (no overwrite), got %d", len(mock.runNoOutCalls))
+	}
+}
+
+// TestSmartPush_PushesWhenPullSkippedAndRemoteUnchanged verifies the push still
+// proceeds when the TTL-skipped pull's conflict check finds the remote unchanged.
+func TestSmartPush_PushesWhenPullSkippedAndRemoteUnchanged(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("local-modified"), 0600)
+
+	remoteTime := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	_ = SaveState(tmpDir, &SyncState{
+		LastPushHash:  "hash-before-local-edit", // local diverged
+		RemoteModTime: remoteTime,
+		RemoteSize:    100,
+	})
+	// Remote UNCHANGED (matches state) → conflict check passes → push proceeds.
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{{Name: "vault.enc", Size: 100, ModTime: remoteTime}})
+
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullSkipped = true
+
+	pushed, err := service.SmartPush(vaultPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !pushed {
+		t.Error("expected pushed=true when remote is unchanged (no conflict)")
+	}
+	if len(mock.runNoOutCalls) != 1 {
+		t.Errorf("expected 1 push (rclone sync) call, got %d", len(mock.runNoOutCalls))
+	}
+}
+
+// TestSmartPush_ConflictWhenPullSkippedFirstRunEmptyHash is the regression test
+// for the earlier bug where the push-time check reused a function that could
+// PULL (overwrite local) when LastPushHash was empty. With an empty hash
+// (never-pushed / first-run state), a TTL-skipped pull and a changed remote must
+// still yield ErrSyncConflict and touch rclone for NOTHING — no pull, no push.
+func TestSmartPush_ConflictWhenPullSkippedFirstRunEmptyHash(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("local-modified"), 0600)
+
+	remoteTime := time.Date(2026, 1, 16, 12, 0, 0, 0, time.UTC)
+	_ = SaveState(tmpDir, &SyncState{}) // LastPushHash == "", zero remote metadata
+
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{{Name: "vault.enc", Size: 200, ModTime: remoteTime}})
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullSkipped = true
+
+	pushed, err := service.SmartPush(vaultPath)
+	if !errors.Is(err, ErrSyncConflict) {
+		t.Errorf("expected ErrSyncConflict on empty-hash + changed remote, got: %v", err)
+	}
+	if pushed {
+		t.Error("expected pushed=false")
+	}
+	if len(mock.runNoOutCalls) != 0 {
+		t.Errorf("SAFETY: expected 0 rclone RunNoOutput calls (no pull, no push), got %d", len(mock.runNoOutCalls))
 	}
 }

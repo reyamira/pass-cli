@@ -17,6 +17,7 @@ import (
 	"github.com/arimxyer/pass-cli/internal/security"
 	"github.com/arimxyer/pass-cli/internal/storage"
 	intsync "github.com/arimxyer/pass-cli/internal/sync"
+	"github.com/arimxyer/pass-cli/internal/timing"
 
 	"github.com/tyler-smith/go-bip39"
 	"golang.org/x/crypto/argon2"
@@ -248,6 +249,14 @@ func (v *VaultService) SyncPush() bool {
 		return false
 	}
 	pushed, err := v.syncService.SmartPush(v.vaultPath)
+	if errors.Is(err, intsync.ErrSyncConflict) {
+		// The TTL-skipped pull's push-time conflict check found the remote changed
+		// under a diverged local vault. Nothing was pushed or overwritten — both
+		// sides are intact; the user resolves which to keep.
+		v.syncConflictDetected = true
+		fmt.Fprintf(os.Stderr, "Warning: sync conflict — the remote changed since your last sync, so your local change was NOT pushed (nothing was overwritten). Use `pass-cli sync resolve` to choose which version to keep.\n")
+		return false
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: sync push failed: %v\n", err)
 		return false
@@ -690,6 +699,7 @@ func (v *VaultService) InitializeWithRecovery(masterPassword []byte, useKeychain
 // T011: Updated signature to accept []byte, T015: Added deferred cleanup
 // T036e: Auto-rollback on incomplete migration detection
 func (v *VaultService) Unlock(masterPassword []byte) error {
+	defer timing.Track("vault.Unlock (derive+decrypt)")()
 	defer crypto.ClearBytes(masterPassword) // T015: Ensure cleanup even on error
 
 	if v.unlocked {
@@ -972,6 +982,7 @@ func (v *VaultService) PrepareUnlock() (*PreparedUnlock, error) {
 // parameters (no file access) — safe to call while a sync pull is in flight.
 // The returned key is handed to UnlockWithPreparedKey, which clears it.
 func (p *PreparedUnlock) DeriveDataKey(password []byte) ([]byte, error) {
+	defer timing.Track("PBKDF2 derive (keychain)")()
 	return p.storageService.DeriveDataKey(string(password), p.params)
 }
 
