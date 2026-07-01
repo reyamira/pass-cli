@@ -128,6 +128,16 @@ Why slash and not `${pass:service:field}`: the template is exactly where the col
 
 ## 5. Phase 2 — the agent (#116) and the socket backend
 
+**Sub-PR decomposition (2026-07-01).** Phase 2 ships as sequenced sub-PRs so the two security-critical changes get isolated, focused review. Owner gate: auto-merge-on-green the *plumbing* PRs (2a/2b/2e); **hold the security PRs (2c/2d/2f) for explicit review**:
+- **2a — protocol + in-process agent core (no I/O).** `internal/agent`: `Request`/`Response` (no key-export method by construction), the mutex-guarded resident `Agent` with read-only resolve (reusing `resolver.NewDirect`), idle/max-TTL auto-lock on an injected `Clock`, and a `Logger` structurally incapable of emitting a value. Fully unit-tested incl. rejection/leak paths. **← this PR.**
+- **2b — unix-socket transport + `agent`/`stop`/`status`/`lock` commands + `socketResolver` + client try-socket-then-fallback.** Socket dir `0700` / socket `0600` land **here** (filesystem perms are the primary access control per §5.3 — not deferred to 2c). Plumbing.
+- **2c — peer-cred auth (Linux `SO_PEERCRED`).** Security-critical; decision (`uid==owner`) separated from the syscall so it's table-testable and fail-closed. **Hold for review.**
+- **2d — memguard for the resident key.** Confined to `internal/agent` (the daemon derives/guards its *own* Enclave; `VaultService.masterPassword` is untouched). Security-critical. **Hold for review.**
+- **2e — revalidating cache + batched usage tracking.** Local-file staleness refresh (§5.8), coalesced `track` write-back that re-reads current on-disk vault. Plumbing.
+- **2f — cross-platform (macOS `getpeereid`, Windows named pipe + ACL peer-cred).** Runs only in CI on those runners. Security-critical. **Hold for review.**
+
+The subsections below are the full design; each sub-PR implements its slice.
+
 ### 5.1 Process & commands
 New `cmd/agent.go` group:
 - `pass-cli agent` — start (foreground by default; `--daemonize` to background). Unlocks once via `unlockVaultWithSync`, then serves.
