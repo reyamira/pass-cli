@@ -420,3 +420,52 @@ func TestFormatRelativeTime(t *testing.T) {
 		})
 	}
 }
+
+// TestCredentialTableSortByField verifies the table honors the AppState sort
+// field and direction, with a Service tie-break for determinism.
+func TestCredentialTableSortByField(t *testing.T) {
+	mockVault := NewMockVaultService()
+	state := models.NewAppState(mockVault)
+
+	now := time.Now()
+	mockCreds := []vault.CredentialMetadata{
+		{Service: "github", Username: "amy", LastAccessed: now.Add(-1 * time.Hour)},
+		{Service: "AWS", Username: "zoe", LastAccessed: now.Add(-5 * time.Minute)},
+		{Service: "azure", Username: "bob", LastAccessed: time.Time{}}, // Never
+	}
+	mockVault.SetCredentials(mockCreds)
+	require.NoError(t, state.LoadCredentials())
+
+	table := NewCredentialTable(state)
+
+	services := func() []string {
+		out := make([]string, 0, 3)
+		for r := 1; r <= 3; r++ {
+			out = append(out, table.GetCell(r, 0).Text)
+		}
+		return out
+	}
+
+	// Default: Service ascending, case-insensitive.
+	table.Refresh()
+	require.Equal(t, []string{"AWS", "azure", "github"}, services(), "service asc")
+
+	// Cycle to Username ascending: amy(github), bob(azure), zoe(AWS).
+	state.CycleSortField()
+	table.Refresh()
+	require.Equal(t, []string{"github", "azure", "AWS"}, services(), "username asc")
+
+	// Cycle to Last Used ascending: Never(azure), -1h(github), -5m(AWS).
+	state.CycleSortField()
+	table.Refresh()
+	require.Equal(t, []string{"azure", "github", "AWS"}, services(), "last-used asc")
+
+	// Reverse direction: Last Used descending.
+	state.ToggleSortDirection()
+	table.Refresh()
+	require.Equal(t, []string{"AWS", "github", "azure"}, services(), "last-used desc")
+
+	// Cycle wraps back to Service.
+	state.CycleSortField()
+	require.Equal(t, models.SortByService, state.GetSortField(), "cycle wraps to Service")
+}

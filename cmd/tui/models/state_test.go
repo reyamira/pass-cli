@@ -834,3 +834,33 @@ func TestTriggerRefresh(t *testing.T) {
 		t.Errorf("Expected onFilterChanged not called, got %d", filterChangedCount)
 	}
 }
+
+// TestAppStateSortState verifies the default sort, field cycling (with wrap),
+// and direction toggling.
+func TestAppStateSortState(t *testing.T) {
+	state := NewAppState(NewMockVaultService())
+
+	// Default is Service ascending.
+	require.Equal(t, SortByService, state.GetSortField(), "default sort field")
+	require.True(t, state.GetSortAscending(), "default should be ascending")
+
+	// Cycling advances Service -> Username -> Last Used -> Service.
+	want := []SortField{SortByUsername, SortByLastUsed, SortByService}
+	for i, w := range want {
+		state.CycleSortField()
+		require.Equalf(t, w, state.GetSortField(), "after %d cycle(s)", i+1)
+	}
+
+	// Toggling flips direction and back.
+	state.ToggleSortDirection()
+	require.False(t, state.GetSortAscending(), "after one toggle")
+	state.ToggleSortDirection()
+	require.True(t, state.GetSortAscending(), "after two toggles")
+}
+
+// TestSortFieldString verifies the labels used in the table title.
+func TestSortFieldString(t *testing.T) {
+	require.Equal(t, "Service", SortByService.String())
+	require.Equal(t, "Username", SortByUsername.String())
+	require.Equal(t, "Last Used", SortByLastUsed.String())
+}
