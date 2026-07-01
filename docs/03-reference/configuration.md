@@ -134,6 +134,8 @@ sync:
 |--------|------|---------|-------------|
 | `enabled` | bool | `false` | Enable/disable rclone sync |
 | `remote` | string | `""` | rclone remote and path |
+| `pull_ttl_seconds` | int | `0` (30s) | Window in which a command serves the local vault without re-probing the remote; also the failure-backoff window. `0` uses the default (30s); negative disables the gate (probe every command). |
+| `probe_timeout_seconds` | int | `0` (8s) | Timeout for the pre-unlock remote metadata probe. Raise it for a slow/high-latency remote so it isn't misclassified as failed. `0` uses the default (8s); negative disables the bound (unbounded probe). Heavy pull/push transfers are always unbounded. |
 
 **Sync Behavior**:
 - **Pull**: Happens once per CLI session (before first vault access)

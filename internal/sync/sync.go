@@ -188,8 +188,24 @@ func NewService(cfg config.SyncConfig) *Service {
 	}
 	return &Service{
 		config:   cfg,
-		executor: &execExecutor{runTimeout: defaultProbeTimeout},
+		executor: &execExecutor{runTimeout: resolveProbeTimeout(cfg.ProbeTimeoutSeconds)},
 		pullTTL:  ttl,
+	}
+}
+
+// resolveProbeTimeout maps the configured probe_timeout_seconds to a duration:
+// 0 uses the built-in default; a positive value sets the bound; a negative
+// value disables the bound (unbounded probe). Mirrors the pull_ttl_seconds
+// tri-state. Only the metadata probe (Run) is affected — the heavy transfers
+// stay unbounded regardless.
+func resolveProbeTimeout(seconds int) time.Duration {
+	switch {
+	case seconds > 0:
+		return time.Duration(seconds) * time.Second
+	case seconds < 0:
+		return 0 // disabled: unbounded probe
+	default:
+		return defaultProbeTimeout
 	}
 }
 
