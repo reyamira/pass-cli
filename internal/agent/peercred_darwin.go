@@ -1,4 +1,4 @@
-//go:build linux
+//go:build darwin
 
 package agent
 
@@ -11,9 +11,10 @@ import (
 )
 
 // authorizePeer rejects a connection whose peer process is not owned by the same
-// user as the agent. It is defense-in-depth on top of the socket's 0600
-// permissions (§5.3). Any failure to obtain the peer credential is treated as a
-// rejection — fail-closed, never default-open.
+// user as the agent — the macOS counterpart of the Linux SO_PEERCRED check, using
+// the LOCAL_PEERCRED socket option. Defense-in-depth over the socket's 0600
+// permissions. Any failure to obtain the peer credential is a rejection
+// (fail-closed).
 func authorizePeer(conn net.Conn) error {
 	uid, err := peerUID(conn)
 	if err != nil {
@@ -25,7 +26,8 @@ func authorizePeer(conn net.Conn) error {
 	return nil
 }
 
-// peerUID returns the connecting peer's user id via SO_PEERCRED.
+// peerUID returns the connecting peer's user id via getsockopt(LOCAL_PEERCRED),
+// which yields an xucred whose first uid is the peer's effective uid.
 func peerUID(conn net.Conn) (uint32, error) {
 	uc, ok := conn.(*net.UnixConn)
 	if !ok {
@@ -35,15 +37,15 @@ func peerUID(conn net.Conn) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	var ucred *unix.Ucred
+	var xucred *unix.Xucred
 	var credErr error
 	if ctrlErr := raw.Control(func(fd uintptr) {
-		ucred, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+		xucred, credErr = unix.GetsockoptXucred(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERCRED)
 	}); ctrlErr != nil {
 		return 0, ctrlErr
 	}
 	if credErr != nil {
 		return 0, credErr
 	}
-	return ucred.Uid, nil
+	return xucred.Uid, nil
 }
