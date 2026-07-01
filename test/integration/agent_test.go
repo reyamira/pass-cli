@@ -181,9 +181,9 @@ func TestIntegration_Agent_LockThenFallback(t *testing.T) {
 	configPath, password, service, secret := setupExecVault(t)
 	sockPath, _, _ := startAgent(t, configPath, password)
 
-	// Lock over the socket.
-	if _, stderr, err := runWithAgent(t, configPath, sockPath, "lock"); err != nil {
-		t.Fatalf("lock failed: %v\nStderr: %s", err, stderr)
+	// Lock over the socket via `agent lock` (the subcommand form).
+	if _, stderr, err := runWithAgent(t, configPath, sockPath, "agent", "lock"); err != nil {
+		t.Fatalf("agent lock failed: %v\nStderr: %s", err, stderr)
 	}
 
 	// The socket should be freed promptly (server stopped on the lock).
