@@ -95,7 +95,12 @@ func runAgent(cmd *cobra.Command, _ []string) error {
 	// or casually ptraced. Best-effort: a failure (e.g. a low RLIMIT_MEMLOCK) is a
 	// warning, not fatal — the agent is then no worse off than a one-shot command.
 	if err := agent.HardenProcessMemory(); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Warning: could not harden agent memory (%v); continuing without mlock\n", err)
+		// PR_SET_DUMPABLE=0 is applied first and rarely fails, so core-dump/ptrace
+		// protection is active even here — only the swap-lock (mlock) is unavailable,
+		// which is expected without a raised RLIMIT_MEMLOCK. Keep the tone calm.
+		_, _ = fmt.Fprintf(os.Stderr, "note: agent memory not locked into RAM (%v).\n"+
+			"      core-dump and ptrace protection are still active; raise RLIMIT_MEMLOCK "+
+			"(e.g. systemd LimitMEMLOCK=infinity) to enable mlock.\n", err)
 	}
 
 	vaultPath := GetVaultPath()

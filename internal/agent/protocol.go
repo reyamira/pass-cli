@@ -19,7 +19,7 @@ const ProtocolVersion = 1
 // the key never crosses the wire. Adding one would break the core invariant.
 const (
 	MethodResolve  = "resolve"  // resolve field values for a batch of mappings
-	MethodLock     = "lock"     // zero the resident secrets, keep the process alive
+	MethodLock     = "lock"     // zero the resident secrets; the server then stops (socket freed)
 	MethodStatus   = "status"   // report unlocked/idle/ttl (never secrets)
 	MethodShutdown = "shutdown" // lock and signal the server to stop
 )
