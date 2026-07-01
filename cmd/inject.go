@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/arimxyer/pass-cli/internal/envmap"
-	"github.com/arimxyer/pass-cli/internal/resolver"
-	"github.com/arimxyer/pass-cli/internal/vault"
 )
 
 var (
@@ -81,18 +79,14 @@ func runInject(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	vaultPath := GetVaultPath()
-	if _, err := os.Stat(vaultPath); os.IsNotExist(err) {
-		return fmt.Errorf("vault not found at %s\nRun 'pass-cli init' to create a vault first", vaultPath)
-	}
-	vaultService, err := vault.New(vaultPath)
+	// Acquire the resolver (a running agent, else open+unlock the vault) BEFORE
+	// reading a stdin template: with direct unlock the password prompt reads stdin,
+	// so the template must be read after. With an agent there is no prompt.
+	r, cleanup, err := acquireResolver()
 	if err != nil {
-		return fmt.Errorf("failed to create vault service at %s: %w", vaultPath, err)
-	}
-	if err := unlockVaultWithSync(vaultService); err != nil {
 		return err
 	}
-	defer vaultService.Lock()
+	defer cleanup()
 
 	if injectInFile == "" {
 		input, err = io.ReadAll(cmd.InOrStdin())
@@ -103,9 +97,6 @@ func runInject(cmd *cobra.Command, _ []string) error {
 
 	// Read-only via the shared resolver (no usage write, no sync push). All
 	// references in the template resolve in a single batch call.
-	r := resolver.NewDirect(vaultService)
-	defer func() { _ = r.Close() }()
-
 	rendered, err := envmap.RenderTemplate(string(input), func(refs []envmap.TemplateRef) ([]string, error) {
 		return r.ResolveValues(templateMappings(refs), injectField)
 	})

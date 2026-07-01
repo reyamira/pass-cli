@@ -3,14 +3,11 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/arimxyer/pass-cli/internal/envmap"
-	"github.com/arimxyer/pass-cli/internal/resolver"
-	"github.com/arimxyer/pass-cli/internal/vault"
 )
 
 var (
@@ -135,27 +132,13 @@ func runExport(cmd *cobra.Command, args []string) error {
 	}
 	mappings = append(mappings, manifestMappings...)
 
-	vaultPath := GetVaultPath()
-	if _, err := os.Stat(vaultPath); os.IsNotExist(err) {
-		return fmt.Errorf("vault not found at %s\nRun 'pass-cli init' to create a vault first", vaultPath)
-	}
-
-	vaultService, err := vault.New(vaultPath)
+	// Prefer a running agent (no prompt, no PBKDF2), else open+unlock the vault.
+	// export is read-only either way — no usage write, no sync push.
+	r, cleanup, err := acquireResolver()
 	if err != nil {
-		return fmt.Errorf("failed to create vault service at %s: %w", vaultPath, err)
-	}
-
-	// Pull from remote and unlock, overlapping the pull with the password prompt
-	// (#103; read-only: no push after).
-	if err := unlockVaultWithSync(vaultService); err != nil {
 		return err
 	}
-	defer vaultService.Lock()
-
-	// export is read-only, like exec: the resolver never records field access or
-	// triggers a sync push.
-	r := resolver.NewDirect(vaultService)
-	defer func() { _ = r.Close() }()
+	defer cleanup()
 
 	values, err := r.ResolveValues(mappings, exportField)
 	if err != nil {

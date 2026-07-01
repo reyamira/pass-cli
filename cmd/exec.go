@@ -11,7 +11,6 @@ import (
 
 	"github.com/arimxyer/pass-cli/internal/envmap"
 	"github.com/arimxyer/pass-cli/internal/resolver"
-	"github.com/arimxyer/pass-cli/internal/vault"
 )
 
 var (
@@ -251,33 +250,14 @@ func runExec(cmd *cobra.Command, args []string) error {
 	}
 	mappings = append(mappings, manifestMappings...)
 
-	vaultPath := GetVaultPath()
-
-	// Check if vault exists
-	if _, err := os.Stat(vaultPath); os.IsNotExist(err) {
-		return fmt.Errorf("vault not found at %s\nRun 'pass-cli init' to create a vault first", vaultPath)
-	}
-
-	// Create vault service
-	vaultService, err := vault.New(vaultPath)
+	// Acquire a read-only resolver: a running agent if one is up (no prompt, no
+	// PBKDF2), else the local vault opened and unlocked. exec is deliberately
+	// read-only either way — the resolver never records usage or triggers a push.
+	r, cleanup, err := acquireResolver()
 	if err != nil {
-		return fmt.Errorf("failed to create vault service at %s: %w", vaultPath, err)
-	}
-
-	// Pull from remote and unlock, overlapping the pull with the password prompt
-	// (#103; read-only: no push after).
-	if err := unlockVaultWithSync(vaultService); err != nil {
 		return err
 	}
-	defer vaultService.Lock()
-
-	// Build the child's extra environment via the shared resolver. exec is
-	// deliberately read-only: the resolver does NOT call RecordFieldAccess or
-	// syncPushAfterCommand, so repeated invocations on a hot path don't mutate the
-	// vault hash and trigger a sync push every time. The direct backend does not own
-	// the vault, so Close is a no-op; runExec owns unlock/Lock.
-	r := resolver.NewDirect(vaultService)
-	defer func() { _ = r.Close() }()
+	defer cleanup()
 
 	extraEnv := make([]string, 0, len(mappings)+len(envEntries))
 
@@ -305,9 +285,9 @@ func runExec(cmd *cobra.Command, args []string) error {
 	}
 	if exitCode != 0 {
 		// Execute() flattens any returned error to exit 1, so we must propagate the
-		// child's exit code ourselves. Lock explicitly because the deferred Lock will
-		// not run after os.Exit (memory zeroing is moot at process exit).
-		vaultService.Lock()
+		// child's exit code ourselves. Clean up explicitly because the deferred
+		// cleanup will not run after os.Exit (memory zeroing is moot at process exit).
+		cleanup()
 		os.Exit(exitCode)
 	}
 	return nil
