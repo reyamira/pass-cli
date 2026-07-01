@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent revalidating cache** (#116) — a running `pass-cli agent` now reloads its in-memory vault snapshot when `vault.enc` changes on disk (e.g. another shell ran `add`/`update`), so it serves fresh data instead of a stale snapshot, without taking an exclusive lock that would block those other operations. If the on-disk vault can no longer be decrypted with the held key (the master password was rotated by another process), the agent locks and fails the request rather than serving stale data. The resolve path remains strictly read-only.
 - **Env-injection grammar: prefer `/` over `:`** (#115) — credential references now accept a slash separator (`service/field`) in addition to the legacy colon form (`service:field`, still accepted unchanged). Slash is preferred because in slash form a `:` inside a service name is a literal character, and it lines up with a future `op://`-style path. Applies to `--set` on both `exec` and `export`.
 
+### Fixed
+- **Sync: an unreachable remote no longer costs the probe timeout on every command** (#133) — the pre-unlock TTL-gate (#103) only opened on a *successful* probe, so with sync enabled and the remote down/slow every command re-probed and blocked for the full 8s (`Warning: failed to check remote state: … timed out after 8s`). A failed probe now stamps a failure timestamp and enters a backoff (the same window as `pull_ttl_seconds`, default 30s): subsequent commands skip the probe and serve the local vault, so a dead remote costs the timeout at most once per window. A successful contact clears the backoff immediately. To stay safe, a write during the backoff is **deferred** (not pushed) rather than blind-pushed — so a remote that recovered mid-window can't be silently overwritten — and syncs on the next command after the window expires.
+
 ## [0.18.0] - 2026-06-26
 
 ### Added

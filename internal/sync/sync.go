@@ -303,14 +303,22 @@ func (s *Service) SmartPull(vaultPath string) error {
 
 	vaultDir := filepath.Dir(vaultPath)
 
-	// TTL-gate: skip the remote probe if we contacted the remote recently.
+	// TTL-gate: skip the remote probe if we contacted the remote recently, OR if
+	// a recent probe failed (the failure-backoff — don't re-eat the probe timeout
+	// on a dead remote every call, #133). Either way the local vault is served and
+	// pullSkipped is set so a later SmartPush re-derives the right handling from
+	// state (conflict-check after a success-skip; defer after a failure-skip).
 	s.pullSkipped = false
 	if s.pullTTL > 0 {
-		if state, err := LoadState(vaultDir); err == nil &&
-			!state.LastPullCheck.IsZero() &&
-			time.Since(state.LastPullCheck) < s.pullTTL {
-			s.pullSkipped = true
-			return nil
+		if state, err := LoadState(vaultDir); err == nil {
+			if !state.LastPullCheck.IsZero() && time.Since(state.LastPullCheck) < s.pullTTL {
+				s.pullSkipped = true
+				return nil
+			}
+			if s.inFailureBackoff(state) {
+				s.pullSkipped = true
+				return nil
+			}
 		}
 	}
 
@@ -327,7 +335,11 @@ func (s *Service) pullFromRemote(vaultPath, vaultDir string) error {
 	remoteFiles, err := s.CheckRemoteMetadata()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to check remote state: %v\n", err)
-		return nil // Allow offline operation (do not stamp LastPullCheck)
+		// Allow offline operation. Stamp LastPullFailure (not LastPullCheck) so a
+		// dead/slow remote is re-probed at most once per backoff window instead of
+		// eating the full probe timeout on every command (#133).
+		s.recordPullFailure(vaultDir)
+		return nil
 	}
 
 	// Find vault.enc in remote files
@@ -417,10 +429,46 @@ func (s *Service) pullFromRemote(vaultPath, vaultDir string) error {
 // recordPullCheck stamps the TTL clock (LastPullCheck) and persists the state.
 // Called on every clean remote contact so the gate can skip subsequent probes.
 func (s *Service) recordPullCheck(vaultDir string, state *SyncState) {
-	state.LastPullCheck = time.Now()
+	stampSuccess(state)
 	if err := SaveState(vaultDir, state); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to save sync state: %v\n", err)
 	}
+}
+
+// stampSuccess marks a clean remote contact: it opens the TTL-gate
+// (LastPullCheck) and clears any prior failure timestamp so the failure-backoff
+// stops deferring pushes the moment the remote recovers (#133). Every place that
+// records a successful contact must go through here so a stale LastPullFailure
+// can never outlive a recovery.
+func stampSuccess(state *SyncState) {
+	state.LastPullCheck = time.Now()
+	state.LastPullFailure = time.Time{}
+}
+
+// recordPullFailure stamps LastPullFailure (probe timed out / remote
+// unreachable) and persists it, so the failure-backoff gate can skip re-probing
+// a dead remote until the window expires (#133). Best-effort: a save failure
+// only forfeits the backoff (the next command re-probes), never blocks.
+func (s *Service) recordPullFailure(vaultDir string) {
+	state, err := LoadState(vaultDir)
+	if err != nil {
+		state = &SyncState{}
+	}
+	state.LastPullFailure = time.Now()
+	if err := SaveState(vaultDir, state); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to save sync state: %v\n", err)
+	}
+}
+
+// inFailureBackoff reports whether a probe failed within the backoff window
+// (the same duration as pullTTL — one knob). While true, the pre-unlock pull
+// skips the probe (serving local) and SmartPush defers the push, so a dead or
+// slow remote is contacted at most once per window. Returns false when the gate
+// is disabled (pullTTL <= 0) or no failure is recorded.
+func (s *Service) inFailureBackoff(state *SyncState) bool {
+	return s.pullTTL > 0 &&
+		!state.LastPullFailure.IsZero() &&
+		time.Since(state.LastPullFailure) < s.pullTTL
 }
 
 // remoteChangedSinceLastPush probes the remote and reports whether it changed
@@ -493,6 +541,17 @@ func (s *Service) SmartPush(vaultPath string) (bool, error) {
 		return false, nil
 	}
 
+	// 3-pre. If a recent probe failed (failure-backoff active), the remote is
+	// down/slow. DEFER the push entirely — don't probe (which would re-eat the
+	// timeout) and don't push. The local change stays local and syncs on the next
+	// command after the backoff expires, when a fresh probe can conflict-check.
+	// Deferring rather than pushing is what keeps a remote that RECOVERED
+	// mid-backoff from being silently blind-overwritten by our stale-local push
+	// (#133).
+	if s.inFailureBackoff(state) {
+		return false, nil
+	}
+
 	// 3a. If the pre-unlock pull was TTL-skipped, it never checked the remote this
 	// cycle. Do a CONFLICT-ONLY check now, before pushing — never a pull, so it can
 	// never overwrite the local vault we are about to push. We are here because the
@@ -526,7 +585,7 @@ func (s *Service) SmartPush(vaultPath string) (bool, error) {
 	// remote, so stamp the TTL clock — the next command can skip its probe.
 	state.LastPushHash = localHash
 	state.LastPushTime = time.Now()
-	state.LastPullCheck = time.Now()
+	stampSuccess(state) // opens the TTL-gate and clears any stale failure-backoff
 
 	// Query actual remote metadata after push so next SmartPull sees current state.
 	// Using time.Now() would mismatch the provider's recorded ModTime.

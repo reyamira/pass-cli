@@ -781,3 +781,158 @@ func TestSmartPush_ConflictWhenPullSkippedFirstRunEmptyHash(t *testing.T) {
 		t.Errorf("SAFETY: expected 0 rclone RunNoOutput calls (no pull, no push), got %d", len(mock.runNoOutCalls))
 	}
 }
+
+// --- failure-backoff tests (#133) ---
+
+// TestSmartPull_StampsLastPullFailureOnProbeError verifies a failed probe stamps
+// LastPullFailure (and NOT LastPullCheck), so the backoff gate can skip the next
+// probe instead of re-eating the timeout.
+func TestSmartPull_StampsLastPullFailureOnProbeError(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	mock := &mockExecutor{runErr: errors.New("timed out after 8s")}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullTTL = 30 * time.Second
+
+	if err := service.SmartPull(vaultPath); err != nil {
+		t.Fatalf("SmartPull should allow offline operation, got: %v", err)
+	}
+	st, err := LoadState(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if st.LastPullFailure.IsZero() {
+		t.Error("expected LastPullFailure to be stamped after a probe error")
+	}
+	if !st.LastPullCheck.IsZero() {
+		t.Error("expected LastPullCheck to remain zero after a probe error (only success stamps it)")
+	}
+}
+
+// TestSmartPull_FailureBackoffSkipsReprobe is the core #133 fix: with a recent
+// probe failure, SmartPull must skip the probe entirely (0 Run calls) rather than
+// re-eat the full probe timeout on every command.
+func TestSmartPull_FailureBackoffSkipsReprobe(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	_ = SaveState(tmpDir, &SyncState{LastPullFailure: time.Now()}) // just failed
+
+	mock := &mockExecutor{}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullTTL = 30 * time.Second
+
+	if err := service.SmartPull(vaultPath); err != nil {
+		t.Fatalf("SmartPull returned error: %v", err)
+	}
+	if len(mock.runCalls) != 0 {
+		t.Errorf("expected 0 Run calls (probe skipped by failure-backoff), got %d", len(mock.runCalls))
+	}
+	if !service.pullSkipped {
+		t.Error("expected pullSkipped=true when the probe was failure-backoff-gated")
+	}
+}
+
+// TestSmartPull_FailureBackoffExpiredReprobes verifies the probe runs again once
+// the failure is outside the backoff window (so a recovered remote resyncs).
+func TestSmartPull_FailureBackoffExpiredReprobes(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	remoteTime := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	_ = SaveState(tmpDir, &SyncState{
+		LastPullFailure: time.Now().Add(-time.Hour), // stale failure
+		RemoteModTime:   remoteTime,
+		RemoteSize:      100,
+	})
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{{Name: "vault.enc", Size: 100, ModTime: remoteTime}})
+
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullTTL = 30 * time.Second
+
+	if err := service.SmartPull(vaultPath); err != nil {
+		t.Fatalf("SmartPull returned error: %v", err)
+	}
+	if len(mock.runCalls) != 1 {
+		t.Errorf("expected 1 Run call (probe, backoff expired), got %d", len(mock.runCalls))
+	}
+}
+
+// TestSmartPull_SuccessClearsFailure verifies a successful probe clears a prior
+// LastPullFailure so the failure-backoff stops deferring pushes on recovery.
+func TestSmartPull_SuccessClearsFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("vault-data"), 0600)
+
+	remoteTime := time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)
+	_ = SaveState(tmpDir, &SyncState{
+		LastPullFailure: time.Now().Add(-time.Hour), // stale failure (outside backoff → reprobes)
+		RemoteModTime:   remoteTime,
+		RemoteSize:      100,
+	})
+	lsjsonOutput, _ := json.Marshal([]RemoteFileInfo{{Name: "vault.enc", Size: 100, ModTime: remoteTime}})
+
+	mock := &mockExecutor{runOutput: lsjsonOutput}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullTTL = 30 * time.Second
+
+	if err := service.SmartPull(vaultPath); err != nil {
+		t.Fatalf("SmartPull returned error: %v", err)
+	}
+	st, err := LoadState(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if !st.LastPullFailure.IsZero() {
+		t.Error("expected LastPullFailure cleared after a successful probe")
+	}
+	if st.LastPullCheck.IsZero() {
+		t.Error("expected LastPullCheck stamped after a successful probe")
+	}
+}
+
+// TestSmartPush_DefersWhenFailureBackoffActive is the data-loss-safety test for
+// #133: when a recent probe failed, a changed local vault must NOT be probed or
+// pushed (deferred). Pushing here would blind-overwrite a remote that recovered
+// mid-backoff. LastPushHash must stay untouched so the change syncs next window.
+func TestSmartPush_DefersWhenFailureBackoffActive(t *testing.T) {
+	tmpDir := t.TempDir()
+	vaultPath := filepath.Join(tmpDir, "vault.enc")
+	_ = os.WriteFile(vaultPath, []byte("local-modified"), 0600)
+
+	_ = SaveState(tmpDir, &SyncState{
+		LastPushHash:    "hash-before-local-edit", // local diverged
+		LastPullFailure: time.Now(),               // recent failure → backoff active
+	})
+
+	mock := &mockExecutor{}
+	service := NewServiceWithExecutor(enabledConfig(), mock)
+	service.pullTTL = 30 * time.Second
+
+	pushed, err := service.SmartPush(vaultPath)
+	if err != nil {
+		t.Fatalf("expected no error (deferred), got: %v", err)
+	}
+	if pushed {
+		t.Error("expected pushed=false (push deferred during failure-backoff)")
+	}
+	if len(mock.runCalls) != 0 {
+		t.Errorf("SAFETY: expected 0 Run calls (no probe during backoff), got %d", len(mock.runCalls))
+	}
+	if len(mock.runNoOutCalls) != 0 {
+		t.Errorf("SAFETY: expected 0 push calls (deferred, no blind overwrite), got %d", len(mock.runNoOutCalls))
+	}
+	st, err := LoadState(tmpDir)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if st.LastPushHash != "hash-before-local-edit" {
+		t.Errorf("expected LastPushHash untouched on defer, got %q", st.LastPushHash)
+	}
+}

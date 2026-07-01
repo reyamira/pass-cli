@@ -23,6 +23,13 @@ type SyncState struct {
 	// this is within the configured window, so a burst of commands makes one
 	// remote round-trip instead of one per command.
 	LastPullCheck time.Time `json:"last_pull_check"`
+	// LastPullFailure is when a metadata probe last failed (unreachable/slow
+	// remote). While this is within the backoff window the probe is skipped —
+	// so a dead remote costs the full probe timeout at most once per window
+	// instead of on every command (#133). A subsequent successful contact clears
+	// it (see stampSuccess). LastPullCheck (success) takes precedence when both
+	// are recent.
+	LastPullFailure time.Time `json:"last_pull_failure"`
 }
 
 // LoadState reads the sync state from the vault directory.
