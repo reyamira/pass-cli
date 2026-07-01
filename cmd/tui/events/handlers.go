@@ -183,6 +183,12 @@ func (eh *EventHandler) handleGlobalKey(event *tcell.EventKey) *tcell.EventKey {
 		case 'T':
 			eh.handleToggleTOTP()
 			return nil
+		case 'o':
+			eh.handleCycleSortField()
+			return nil
+		case 'O':
+			eh.handleReverseSortDirection()
+			return nil
 		}
 	}
 
@@ -340,6 +346,26 @@ func (eh *EventHandler) handleToggleTOTP() {
 	eh.detailView.ToggleTOTPVisibility()
 }
 
+// handleCycleSortField advances the credential table's sort field to the next
+// column and refreshes the table to apply the new order.
+func (eh *EventHandler) handleCycleSortField() {
+	eh.appState.CycleSortField()
+	eh.appState.TriggerFilterChanged()
+	eh.statusBar.ShowInfo(fmt.Sprintf("Sorted by %s", eh.appState.GetSortField()))
+}
+
+// handleReverseSortDirection flips the credential table's sort direction and
+// refreshes the table to apply it.
+func (eh *EventHandler) handleReverseSortDirection() {
+	eh.appState.ToggleSortDirection()
+	eh.appState.TriggerFilterChanged()
+	direction := "ascending"
+	if !eh.appState.GetSortAscending() {
+		direction = "descending"
+	}
+	eh.statusBar.ShowInfo(fmt.Sprintf("Sort %s", direction))
+}
+
 // handleToggleDetailPanel toggles the detail panel visibility through three states.
 // Cycles: Auto (responsive) -> Hide -> Show -> Auto
 // Displays status bar message showing the new state.
@@ -450,6 +476,8 @@ func (eh *EventHandler) handleShowHelp() {
 	addShortcut(getKey("toggle_detail"), "Toggle detail panel")
 	addShortcut(getKey("toggle_sidebar"), "Toggle sidebar")
 	addShortcut(getKey("search"), "Search / Filter credentials")
+	addShortcut("o", "Cycle sort field (Service/Username/Last Used)")
+	addShortcut("O", "Reverse sort direction")
 	row++ // Blank line (just skip row, don't add cells)
 
 	// General section

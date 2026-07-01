@@ -47,6 +47,28 @@ type UpdateCredentialOpts struct {
 
 // AppState holds all application state with thread-safe access.
 // This is the single source of truth for the entire TUI.
+// SortField identifies which column the credential table is ordered by.
+type SortField int
+
+const (
+	SortByService SortField = iota
+	SortByUsername
+	SortByLastUsed
+	sortFieldCount // sentinel: number of sortable fields (keep last)
+)
+
+// String returns the human-readable label shown in the table title.
+func (f SortField) String() string {
+	switch f {
+	case SortByUsername:
+		return "Username"
+	case SortByLastUsed:
+		return "Last Used"
+	default:
+		return "Service"
+	}
+}
+
 type AppState struct {
 	// Concurrency control
 	mu sync.RWMutex // Protects all fields below
@@ -71,6 +93,10 @@ type AppState struct {
 	// Search state
 	searchState *SearchState
 
+	// Table sort state (session-only; defaults to Service ascending)
+	sortField     SortField
+	sortAscending bool
+
 	// Write tracking for sync optimization
 	hasWriteOperations bool
 
@@ -93,10 +119,12 @@ func NewSearchState() *SearchState {
 // NewAppState creates a new AppState with the given vault service.
 func NewAppState(vaultService VaultService) *AppState {
 	return &AppState{
-		vault:       vaultService,
-		credentials: make([]vault.CredentialMetadata, 0),
-		categories:  make([]string, 0),
-		searchState: NewSearchState(),
+		vault:         vaultService,
+		credentials:   make([]vault.CredentialMetadata, 0),
+		categories:    make([]string, 0),
+		searchState:   NewSearchState(),
+		sortField:     SortByService,
+		sortAscending: true,
 	}
 }
 
@@ -440,6 +468,34 @@ func (s *AppState) GetSearchState() *SearchState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.searchState
+}
+
+// GetSortField returns the field the credential table is currently sorted by.
+func (s *AppState) GetSortField() SortField {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sortField
+}
+
+// GetSortAscending reports whether the current sort is ascending.
+func (s *AppState) GetSortAscending() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sortAscending
+}
+
+// CycleSortField advances the sort field to the next column, wrapping around.
+func (s *AppState) CycleSortField() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sortField = (s.sortField + 1) % sortFieldCount
+}
+
+// ToggleSortDirection flips the sort between ascending and descending.
+func (s *AppState) ToggleSortDirection() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sortAscending = !s.sortAscending
 }
 
 // SetOnCredentialsChanged registers a callback for credential changes.
