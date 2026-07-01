@@ -72,10 +72,10 @@ func TestAgent_VersionMismatch(t *testing.T) {
 	}
 }
 
-func TestAgent_LockRefusesResolve(t *testing.T) {
+func TestAgent_LockedRefusesResolve(t *testing.T) {
 	a := New(newTestVault(t), Options{})
-	if resp := a.Handle(Request{Version: ProtocolVersion, Method: MethodLock}); !resp.OK {
-		t.Fatalf("lock failed: %s", resp.Error)
+	if resp := a.Handle(Request{Version: ProtocolVersion, Method: MethodShutdown}); !resp.OK {
+		t.Fatalf("shutdown failed: %s", resp.Error)
 	}
 	resp := a.Handle(resolveReq(Ref{Service: "github"}))
 	if resp.OK {
@@ -154,9 +154,9 @@ func TestAgent_LoggerNeverEmitsSecret(t *testing.T) {
 	if !resp.OK {
 		t.Fatalf("resolve failed: %s", resp.Error)
 	}
-	// Trigger lock/status events too, to exercise more log paths.
+	// Trigger status/shutdown events too, to exercise more log paths.
 	a.Handle(Request{Version: ProtocolVersion, Method: MethodStatus})
-	a.Handle(Request{Version: ProtocolVersion, Method: MethodLock})
+	a.Handle(Request{Version: ProtocolVersion, Method: MethodShutdown})
 
 	logged := buf.String()
 	if strings.Contains(logged, testSecret) {

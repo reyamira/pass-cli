@@ -64,11 +64,11 @@ func (s *Server) handleConn(conn net.Conn) {
 	resp := s.agent.Handle(req)
 	_ = json.NewEncoder(conn).Encode(resp)
 
-	// Free the socket promptly whenever a request leaves the agent locked — an
-	// explicit `lock`/shutdown, or idle/max-TTL enforcement that fired during this
-	// request. Serve() then returns and runAgent removes the socket, so clients fall
-	// back to direct-open and a fresh `pass-cli agent` can rebind, instead of hitting
-	// a locked-but-running agent for up to one expiry tick.
+	// Free the socket promptly whenever a request leaves the agent locked — a
+	// `stop` (shutdown), or idle/max-TTL enforcement that fired during this request.
+	// Serve() then returns and runAgent removes the socket, so clients fall back to
+	// direct-open and a fresh `pass-cli agent` can rebind, instead of hitting a
+	// locked-but-running agent for up to one expiry tick.
 	if s.agent.Locked() {
 		s.Stop()
 	}

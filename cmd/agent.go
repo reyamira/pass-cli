@@ -96,8 +96,7 @@ var agentStartCmd = &cobra.Command{
 	Long: `Start launches the agent as a background process and returns as soon as it is
 unlocked and listening — no shell '&' needed. The one-time unlock happens on your
 terminal (a prompt, or silently via the keychain); after that the agent runs
-detached and survives closing the terminal. Stop it with 'pass-cli agent stop'
-(or 'pass-cli lock').`,
+detached and survives closing the terminal. Stop it with 'pass-cli agent stop'.`,
 	Args: cobra.NoArgs,
 	RunE: runAgentStart,
 }

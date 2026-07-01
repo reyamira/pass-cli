@@ -17,8 +17,7 @@ dependency.
 pass-cli agent start                              # unlock once, then background itself
 pass-cli exec --set GITHUB_TOKEN=github -- gh repo list   # resolves via the agent
 pass-cli agent status                             # unlocked? idle? max-ttl left?
-pass-cli agent lock                               # zero secrets and stop the agent
-pass-cli agent stop                               # same: lock and exit
+pass-cli agent stop                               # zero secrets and stop the agent
 ```
 
 `agent start` launches the agent in the **background** and returns as soon as it is
@@ -28,9 +27,9 @@ detached and survives closing the terminal. To run it in the **foreground** inst
 (e.g. under a supervisor), use `pass-cli agent serve` (or bare `pass-cli agent`) and
 background it yourself with `&`.
 
-`agent lock`, the top-level `pass-cli lock`, and `agent stop` all zero the resident
-secrets and stop the agent, freeing the socket; the next command falls back to
-direct-open. To bring the agent back, run `pass-cli agent start` again.
+`agent stop` zeroes the resident secrets and stops the agent, freeing the socket;
+the next command falls back to direct-open. To bring the agent back, run
+`pass-cli agent start` again.
 
 Flags:
 

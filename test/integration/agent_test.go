@@ -237,57 +237,29 @@ func TestIntegration_Agent_StartDaemonizes(t *testing.T) {
 	}
 }
 
-// TestIntegration_Agent_LockThenFallback locks the agent and verifies it stops (the
-// socket is freed) and subsequent commands fall back to direct-open — rather than
-// hitting a locked-but-running agent.
-func TestIntegration_Agent_LockThenFallback(t *testing.T) {
+// TestIntegration_Agent_StopThenFallback stops the agent and verifies the socket is
+// freed promptly and commands fall back to direct-open (password supplied on stdin).
+func TestIntegration_Agent_StopThenFallback(t *testing.T) {
 	configPath, password, service, secret := setupExecVault(t)
-	sockPath, _, _ := startAgent(t, configPath, password)
+	sockPath, _, stop := startAgent(t, configPath, password)
 
-	// Lock over the socket via `agent lock` (the subcommand form).
-	if _, stderr, err := runWithAgent(t, configPath, sockPath, "agent", "lock"); err != nil {
-		t.Fatalf("agent lock failed: %v\nStderr: %s", err, stderr)
+	// Stop the agent over the socket.
+	if _, stderr, err := runWithAgent(t, configPath, sockPath, "agent", "stop"); err != nil {
+		t.Fatalf("agent stop failed: %v\nStderr: %s", err, stderr)
 	}
+	stop()
 
-	// The socket should be freed promptly (server stopped on the lock).
+	// The socket should be freed promptly (server stopped on the shutdown).
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		if _, err := os.Stat(sockPath); os.IsNotExist(err) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("socket still present after lock — agent did not stop")
+			t.Fatal("socket still present after stop — agent did not stop")
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-
-	// exec must now fall back to direct-open with the password on stdin.
-	cmd := exec.Command(binaryPath, "exec", "--set", "TOK="+service, "--", "sh", "-c", `printf %s "$TOK"`)
-	cmd.Env = append(os.Environ(),
-		"PASS_CLI_TEST=1", "PASS_CLI_CONFIG="+configPath, "PASS_CLI_AGENT_SOCK="+sockPath)
-	cmd.Stdin = strings.NewReader(helpers.BuildUnlockStdin(password))
-	var out, errb bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errb
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("exec fallback after lock failed: %v\nStderr: %s", err, errb.String())
-	}
-	if strings.TrimSpace(out.String()) != secret {
-		t.Errorf("exec fallback after lock: got %q, want %q", strings.TrimSpace(out.String()), secret)
-	}
-}
-
-// TestIntegration_Agent_StopThenFallback stops the agent and verifies commands fall
-// back to direct-open (with the password supplied on stdin).
-func TestIntegration_Agent_StopThenFallback(t *testing.T) {
-	configPath, password, service, secret := setupExecVault(t)
-	sockPath, _, stop := startAgent(t, configPath, password)
-
-	// Stop the agent, then resolve via direct-open with the password on stdin.
-	if _, stderr, err := runWithAgent(t, configPath, sockPath, "agent", "stop"); err != nil {
-		t.Fatalf("agent stop failed: %v\nStderr: %s", err, stderr)
-	}
-	stop()
 
 	// PASS_CLI_AGENT_SOCK still points at the (now-absent) socket; exec must fall
 	// back to direct-open. Supply the password on stdin.

@@ -123,9 +123,6 @@ func (a *Agent) Handle(req Request) Response {
 	switch req.Method {
 	case MethodStatus:
 		return a.handleStatus()
-	case MethodLock:
-		a.lockLocked("lock")
-		return okResponse()
 	case MethodShutdown:
 		a.lockLocked("shutdown")
 		return okResponse()
