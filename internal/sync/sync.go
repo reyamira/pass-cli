@@ -156,18 +156,40 @@ func writeLocalMarker(vaultDir, vaultFileName, hash string) error {
 	return os.WriteFile(markerPath, nil, 0600)
 }
 
+// defaultPullTTL is how long a successful remote check is trusted before the
+// pre-unlock probe is made again. Within this window commands serve the local
+// vault without a remote round-trip; writes still do a fresh conflict check at
+// push time (see SmartPush), so freshness is traded only for read latency.
+const defaultPullTTL = 30 * time.Second
+
 // Service provides vault synchronization using rclone.
 type Service struct {
 	config          config.SyncConfig
 	executor        CommandExecutor
 	skipBinaryCheck bool // bypasses rclone PATH check when using mock executor in tests
+
+	// pullTTL gates the pre-unlock remote probe. Zero disables the gate (every
+	// call probes) — the default for the mock-executor test constructor.
+	pullTTL time.Duration
+	// pullSkipped records whether the most recent SmartPull skipped the probe via
+	// the TTL gate. When true, SmartPush does its own conflict check before
+	// pushing so it never blind-overwrites a newer remote.
+	pullSkipped bool
 }
 
 // NewService creates a new sync service with the given configuration.
 func NewService(cfg config.SyncConfig) *Service {
+	ttl := defaultPullTTL
+	switch {
+	case cfg.PullTTLSeconds > 0:
+		ttl = time.Duration(cfg.PullTTLSeconds) * time.Second
+	case cfg.PullTTLSeconds < 0:
+		ttl = 0 // explicitly disabled
+	}
 	return &Service{
 		config:   cfg,
 		executor: &execExecutor{runTimeout: defaultProbeTimeout},
+		pullTTL:  ttl,
 	}
 }
 
@@ -260,8 +282,14 @@ func (s *Service) CheckRemoteMetadata() ([]RemoteFileInfo, error) {
 	return files, nil
 }
 
-// SmartPull checks remote metadata and only pulls if remote has changed.
+// SmartPull checks remote metadata and only pulls if the remote has changed.
 // Returns ErrSyncConflict if both local and remote have changed.
+//
+// It is TTL-gated: if the remote was successfully contacted within pullTTL, the
+// (variable-latency) probe is skipped and the local vault is served as-is. When
+// skipped, pullSkipped is set so a subsequent SmartPush does its own conflict
+// check before pushing — preserving the invariant that a push never blind-
+// overwrites a newer remote (see cmd/helpers.go syncPushAfterCommand).
 func (s *Service) SmartPull(vaultPath string) error {
 	defer timing.Track("SmartPull total")()
 	if !s.IsEnabled() {
@@ -275,11 +303,31 @@ func (s *Service) SmartPull(vaultPath string) error {
 
 	vaultDir := filepath.Dir(vaultPath)
 
+	// TTL-gate: skip the remote probe if we contacted the remote recently.
+	s.pullSkipped = false
+	if s.pullTTL > 0 {
+		if state, err := LoadState(vaultDir); err == nil &&
+			!state.LastPullCheck.IsZero() &&
+			time.Since(state.LastPullCheck) < s.pullTTL {
+			s.pullSkipped = true
+			return nil
+		}
+	}
+
+	return s.pullFromRemote(vaultPath, vaultDir)
+}
+
+// pullFromRemote is the un-gated pull: it probes the remote, pulls when the
+// remote changed (with conflict detection), and stamps LastPullCheck on any
+// clean outcome so the TTL gate can skip subsequent probes. A conflict
+// deliberately does NOT stamp the check, so it keeps being re-detected until the
+// user resolves it.
+func (s *Service) pullFromRemote(vaultPath, vaultDir string) error {
 	// 1. Check remote metadata
 	remoteFiles, err := s.CheckRemoteMetadata()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to check remote state: %v\n", err)
-		return nil // Allow offline operation
+		return nil // Allow offline operation (do not stamp LastPullCheck)
 	}
 
 	// Find vault.enc in remote files
@@ -292,16 +340,17 @@ func (s *Service) SmartPull(vaultPath string) error {
 		}
 	}
 
-	// No remote vault file = nothing to pull
-	if remoteVault == nil {
-		return nil
-	}
-
 	// 2. Load sync state
 	state, err := LoadState(vaultDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load sync state: %v\n", err)
 		state = &SyncState{}
+	}
+
+	// No remote vault file = nothing to pull (but we did contact the remote).
+	if remoteVault == nil {
+		s.recordPullCheck(vaultDir, state)
+		return nil
 	}
 
 	// 3. Decide whether the remote changed since our last push.
@@ -325,11 +374,13 @@ func (s *Service) SmartPull(vaultPath string) error {
 		remoteChanged = !remoteVault.ModTime.Equal(state.RemoteModTime) || remoteVault.Size != state.RemoteSize
 	}
 	if !remoteChanged {
+		s.recordPullCheck(vaultDir, state)
 		return nil // Remote unchanged, skip pull
 	}
 
 	// 4. Remote changed — if local also diverged from our last push, it's a
-	// conflict (both sides changed). This is content-based on both sides.
+	// conflict (both sides changed). This is content-based on both sides. Do NOT
+	// stamp the check on a conflict, so it keeps being re-detected until resolved.
 	if _, statErr := os.Stat(vaultPath); statErr == nil {
 		localHash, hashErr := HashFile(vaultPath)
 		if hashErr == nil && state.LastPushHash != "" && localHash != state.LastPushHash {
@@ -359,15 +410,58 @@ func (s *Service) SmartPull(vaultPath string) error {
 		state.LastPushHash = newHash
 	}
 
-	if err := SaveState(vaultDir, state); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to save sync state: %v\n", err)
-	}
-
+	s.recordPullCheck(vaultDir, state)
 	return nil
 }
 
+// recordPullCheck stamps the TTL clock (LastPullCheck) and persists the state.
+// Called on every clean remote contact so the gate can skip subsequent probes.
+func (s *Service) recordPullCheck(vaultDir string, state *SyncState) {
+	state.LastPullCheck = time.Now()
+	if err := SaveState(vaultDir, state); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to save sync state: %v\n", err)
+	}
+}
+
+// remoteChangedSinceLastPush probes the remote and reports whether it changed
+// since our last push. It is the push-time conflict check for a TTL-skipped pull
+// and NEVER writes the local vault — unlike a pull, it cannot overwrite the
+// changes we are about to push. On a probe error it returns (false, nil),
+// matching the pre-existing posture that an unreachable remote does not block a
+// local operation (the error is already warned to the user).
+func (s *Service) remoteChangedSinceLastPush(vaultPath, vaultDir string) (bool, error) {
+	remoteFiles, err := s.CheckRemoteMetadata()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to check remote state before push: %v\n", err)
+		return false, nil
+	}
+
+	vaultFileName := filepath.Base(vaultPath)
+	var remoteVault *RemoteFileInfo
+	for i := range remoteFiles {
+		if remoteFiles[i].Name == vaultFileName {
+			remoteVault = &remoteFiles[i]
+			break
+		}
+	}
+	if remoteVault == nil {
+		return false, nil // no remote vault yet → nothing to conflict with
+	}
+
+	state, err := LoadState(vaultDir)
+	if err != nil {
+		state = &SyncState{}
+	}
+	if remoteHash, hasMarker := parseRemoteMarkerHash(remoteFiles, vaultFileName); hasMarker {
+		return remoteHash != state.LastPushHash, nil
+	}
+	return !remoteVault.ModTime.Equal(state.RemoteModTime) || remoteVault.Size != state.RemoteSize, nil
+}
+
 // SmartPush checks if local vault has changed and only pushes if needed.
-// Returns true if a push was actually performed.
+// Returns true if a push was actually performed. Returns ErrSyncConflict if the
+// pre-unlock pull was TTL-skipped and a fresh check finds the remote changed
+// under a diverged local vault — in that case nothing is pushed or overwritten.
 func (s *Service) SmartPush(vaultPath string) (bool, error) {
 	if !s.IsEnabled() {
 		return false, nil
@@ -399,6 +493,21 @@ func (s *Service) SmartPush(vaultPath string) (bool, error) {
 		return false, nil
 	}
 
+	// 3a. If the pre-unlock pull was TTL-skipped, it never checked the remote this
+	// cycle. Do a CONFLICT-ONLY check now, before pushing — never a pull, so it can
+	// never overwrite the local vault we are about to push. We are here because the
+	// local vault diverged (localHash != LastPushHash), so a remote that also
+	// changed since our last push is a conflict: abort the push, overwrite nothing.
+	if s.pullSkipped {
+		changed, err := s.remoteChangedSinceLastPush(vaultPath, vaultDir)
+		if err != nil {
+			return false, err
+		}
+		if changed {
+			return false, ErrSyncConflict
+		}
+	}
+
 	// 3b. Write the content marker (#102) into the vault dir so the rclone sync
 	// below carries it to the remote, where the next device's SmartPull reads our
 	// content hash straight from its name. Best-effort: a marker write failure
@@ -413,9 +522,11 @@ func (s *Service) SmartPush(vaultPath string) (bool, error) {
 		return false, nil
 	}
 
-	// 5. Update state
+	// 5. Update state. The push (and the metadata query below) just contacted the
+	// remote, so stamp the TTL clock — the next command can skip its probe.
 	state.LastPushHash = localHash
 	state.LastPushTime = time.Now()
+	state.LastPullCheck = time.Now()
 
 	// Query actual remote metadata after push so next SmartPull sees current state.
 	// Using time.Now() would mismatch the provider's recorded ModTime.

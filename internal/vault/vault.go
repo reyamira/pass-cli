@@ -249,6 +249,14 @@ func (v *VaultService) SyncPush() bool {
 		return false
 	}
 	pushed, err := v.syncService.SmartPush(v.vaultPath)
+	if errors.Is(err, intsync.ErrSyncConflict) {
+		// The TTL-skipped pull's push-time conflict check found the remote changed
+		// under a diverged local vault. Nothing was pushed or overwritten — both
+		// sides are intact; the user resolves which to keep.
+		v.syncConflictDetected = true
+		fmt.Fprintf(os.Stderr, "Warning: sync conflict — the remote changed since your last sync, so your local change was NOT pushed (nothing was overwritten). Use `pass-cli sync resolve` to choose which version to keep.\n")
+		return false
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: sync push failed: %v\n", err)
 		return false

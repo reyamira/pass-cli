@@ -38,6 +38,11 @@ type TerminalConfig struct {
 type SyncConfig struct {
 	Enabled bool   `mapstructure:"enabled"` // Enable/disable sync
 	Remote  string `mapstructure:"remote"`  // rclone remote name + path (e.g., "gdrive:.pass-cli")
+	// PullTTLSeconds gates the pre-unlock remote probe: within this window a
+	// command serves the local vault without a remote round-trip (writes still do
+	// a fresh conflict check at push time). 0 uses the built-in default (30s); a
+	// negative value disables the gate (probe on every command).
+	PullTTLSeconds int `mapstructure:"pull_ttl_seconds"`
 }
 
 // ValidationResult represents the outcome of checking configuration correctness

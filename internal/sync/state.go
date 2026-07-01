@@ -18,6 +18,11 @@ type SyncState struct {
 	LastPushTime  time.Time `json:"last_push_time"`
 	RemoteModTime time.Time `json:"remote_mod_time"`
 	RemoteSize    int64     `json:"remote_size"`
+	// LastPullCheck is when we last successfully contacted the remote (a
+	// metadata probe or a post-push refresh). The TTL-gate skips the probe while
+	// this is within the configured window, so a burst of commands makes one
+	// remote round-trip instead of one per command.
+	LastPullCheck time.Time `json:"last_pull_check"`
 }
 
 // LoadState reads the sync state from the vault directory.
