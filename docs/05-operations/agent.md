@@ -1,4 +1,8 @@
-# Background Agent
+---
+title: "Background Agent"
+weight: 3
+toc: true
+---
 
 `pass-cli agent` unlocks the vault once and holds it in memory, answering read-only
 credential lookups over a local socket. With an agent running, `exec`, `export`,
