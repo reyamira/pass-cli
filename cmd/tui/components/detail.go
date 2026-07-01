@@ -562,8 +562,8 @@ func FormatUsageLocations(cred *vault.Credential) string {
 			for field, count := range record.FieldAccess {
 				fieldParts = append(fieldParts, fmt.Sprintf("%s:%d", field, count))
 			}
-			// Sort field names for consistent display
-			sort.Strings(fieldParts)
+			// Sort field names for consistent display (case-insensitive)
+			sort.Slice(fieldParts, func(i, j int) bool { return lessFold(fieldParts[i], fieldParts[j]) })
 			b.WriteString(strings.Join(fieldParts, ", "))
 			b.WriteString(fmt.Sprintf(")%s", textColor()))
 		}
