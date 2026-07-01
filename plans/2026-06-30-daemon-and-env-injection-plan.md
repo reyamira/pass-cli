@@ -197,7 +197,10 @@ The agent unlocks via master-password prompt **or** `UnlockWithKeychain`. On mac
 
 ---
 
-## 6. Phase 3 — optional platform service
+## 6. Phase 3 — optional platform service — SHIPPED (templates + docs)
+Delivered as **run-on-demand + documented templates, not auto-registered**: `packaging/systemd/pass-cli-agent.service` (systemd `--user`, `LimitMEMLOCK=infinity` so 2d's `mlockall` is effective, stops at logout) and `packaging/launchd/com.reyamira.pass-cli.agent.plist`, plus `docs/05-operations/agent.md` documenting run-on-demand use, the security model, socket location, snapshot freshness, and the service templates. Both service paths require keychain unlock (a service is non-interactive). Windows waits on 2f. Socket-activation is a possible later nicety.
+
+### 6.1 Original notes
 
 Pure run-on-demand first (user runs `pass-cli agent`). Then optionally ship templates (not auto-installed):
 - **Linux:** `systemd --user` unit + socket activation (`pass-cli-agent.socket` → tmpfs path; systemd hands the listener fd, which also gives clean logout teardown).

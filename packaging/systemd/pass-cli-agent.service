@@ -1,0 +1,33 @@
+# pass-cli background agent — systemd --user unit (template, not auto-installed).
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp packaging/systemd/pass-cli-agent.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now pass-cli-agent
+#
+# REQUIRES KEYCHAIN UNLOCK. A service has no terminal to prompt for the master
+# password, so the vault must be set up for keychain unlock (`pass-cli keychain
+# enable`); otherwise the agent cannot unlock at startup and exits.
+#
+# LimitMEMLOCK=infinity lets the agent's mlockall() succeed (a Go runtime exceeds
+# the default 8 MB RLIMIT_MEMLOCK), so secrets are actually kept out of swap.
+
+[Unit]
+Description=pass-cli background credential agent
+Documentation=https://github.com/reyamira/pass-cli
+# Bind the agent's lifetime to the graphical/user session so it stops at logout.
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# --idle/--max-ttl control auto-lock; tune to taste.
+ExecStart=%h/.local/bin/pass-cli agent --idle 15m --max-ttl 8h
+# Allow the agent to lock all its memory into RAM (no swap) — needed for mlockall.
+LimitMEMLOCK=infinity
+# Do not restart on a clean auto-lock/max-TTL exit; restart only on failure.
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
