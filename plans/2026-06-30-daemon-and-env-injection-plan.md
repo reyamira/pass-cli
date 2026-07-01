@@ -157,12 +157,12 @@ New `cmd/agent.go` group:
 - **Stale-socket reclaim on startup:** dial the existing path; if connection refused, `unlink` + rebind; if it answers, exit "agent already running." (Classic footgun — make it explicit.)
 - **Discovery by clients:** env var `PASS_CLI_AGENT_SOCK` overrides; else the default path. If dialing fails for any reason, fall back to direct-open silently (verbose: note the fallback on stderr).
 
-### 5.4 Auth: peer-credential checks in build-tagged files
-New files (introducing the platform-file pattern this repo lacks today):
-- `agentconn/peercred_linux.go` — `SO_PEERCRED` (`unix.GetsockoptUcred`), assert `uid == os.Getuid()`.
-- `agentconn/peercred_darwin.go` — `getpeereid` (via `golang.org/x/sys/unix`), assert uid.
-- `agentconn/peercred_windows.go` — `GetNamedPipeClientProcessId` + token/SID comparison; the primary control is the pipe ACL. **Verify the exact go-winio / `x/sys/windows` API at implementation time** (go-winio was not resolvable in the docs index during planning; confirm it surfaces client PID/SID).
-Reject any peer whose uid/SID ≠ the agent owner, **before** processing the request.
+### 5.4 Auth: peer-credential checks in build-tagged files — 2c SHIPPED (Linux)
+Build-tagged files in `internal/agent` (introducing the platform-file pattern this repo lacked):
+- `peercred_linux.go` (2c) — `SO_PEERCRED` (`unix.GetsockoptUcred`) → `peerUID`; `authorizePeer` asserts `authorizedUID(peerUID, os.Getuid())`, **fail-closed** on any error. The decision `authorizedUID` is a pure function, table-tested independent of the syscall.
+- `peercred_stub.go` (2c) — `//go:build !linux` no-op (macOS/Windows rely on the `0600` socket until 2f; must NOT fail-closed here or it rejects the owner). `handleConn` calls `authorizePeer` **before** decoding/processing the request.
+- `peercred_darwin.go` (2f) — `getpeereid`, assert uid.
+- `peercred_windows.go` (2f) — `GetNamedPipeClientProcessId` + token/SID comparison; the primary control is the pipe ACL. **Verify the exact go-winio / `x/sys/windows` API at implementation time.**
 
 ### 5.5 Concurrency: mutex-guarded, read-only resolve
 `VaultService` is not safe for concurrent mutation. The agent serves N shells:

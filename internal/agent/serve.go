@@ -46,13 +46,21 @@ func (s *Server) handleConn(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(connDeadline))
 
+	// Authorize the peer BEFORE reading or acting on any request: only a process
+	// owned by the same user as the agent may talk to it (defense-in-depth over the
+	// socket's 0600 permissions). Fail-closed on any error obtaining the credential.
+	if err := authorizePeer(conn); err != nil {
+		s.log.Event("rejected_peer", nil)
+		_ = json.NewEncoder(conn).Encode(errResponse("unauthorized"))
+		return
+	}
+
 	var req Request
 	if err := json.NewDecoder(conn).Decode(&req); err != nil {
 		_ = json.NewEncoder(conn).Encode(errResponse("malformed request"))
 		return
 	}
 
-	// Peer-credential authorization is inserted here in Phase 2c, before Handle.
 	resp := s.agent.Handle(req)
 	_ = json.NewEncoder(conn).Encode(resp)
 
