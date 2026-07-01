@@ -102,10 +102,11 @@ New `cmd/export.go`. Reuses the mapping grammar. Emits shell-quoted `export NAME
 - **direnv:** ship a stdlib snippet `use pass_cli <args>` that wraps `eval "$(pass-cli export ...)"` in docs; no code dependency on direnv.
 - **Honest caveat (documented):** `export` materializes into the *current* shell for that shell's lifetime — weaker than `exec`'s child-scoped injection. The doc must say: prefer `exec`/`run` when you only need to launch a command; `export` is the blessed alternative to `VAR="$(pass-cli get …)"`, not to `exec`.
 
-### 4.2 `pass-cli run --env-file <template>` / `pass-cli inject` (#115.2) — ranked #2
-A committable template with **references only** is resolved in-memory.
-- `inject`: read template from stdin/file, write resolved text to stdout (op-inject analogue) — solves composite/derived secrets like `postgres://user:${pass:db:password}@host`.
-- `run --env-file <tmpl> -- <cmd>`: resolve the template into the child env (never to disk), then `runChild`. This is the child-scoped materialization the issue prioritizes.
+### 4.2 `pass-cli inject` + `pass-cli exec --env-file` (#115.2) — ranked #2 — SHIPPED
+A committable template with **references only** (`${pass:service/field}`) is resolved in-memory.
+- `inject`: read a template from `--in-file`/stdin, write the rendered text to `--out-file` (0600) or stdout — solves composite/derived secrets like `postgres://user:${pass:db/password}@host`. A `--in-file` template is read before unlock (fail-fast on a bad path); a stdin template is read *after* unlock, because the master-password prompt also reads stdin (so a stdin template implies keychain unlock).
+- **`run` folded into `exec --env-file` (owner decision 2026-07-01).** Issue #115 named a `run --env-file` command, but it would duplicate `exec` (both inject env → run child). Instead `--env-file <path>` is an additional env source on `exec`: each `KEY=<template>` line is rendered (`envmap.RenderTemplate`) and injected structurally into the child env (never to disk). Net surface: `exec` (run child) / `export` (shell statements) / `inject` (render to stdout) — three distinct output behaviors, no overlap, no separate `run`.
+- **Template engine (`internal/envmap.RenderTemplate`)** is single-pass and fail-closed: all `${pass:...}` refs are collected from the *original* template and resolved in **one batch** call (Phase 2's socket → one round-trip), then substituted; a resolved value containing `${pass:...}` is never re-scanned (injection guard); an unknown/malformed ref aborts the whole render (no partial/silent-empty output). Only `${pass:...}` is special — `$VAR`, `${VAR}`, `$(...)` pass through.
 
 ### 4.3 Project manifest `.pass-cli.toml` / `--from <file>` (#115.4) — ranked #4
 Names-only map so launchers/`.envrc` don't repeat long `--set` chains:
