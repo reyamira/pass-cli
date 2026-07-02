@@ -6,6 +6,8 @@ toc: true
 
 Automate pass-cli with scripts using quiet mode, JSON output, and environment variable integration.
 
+> **Using an AI coding agent?** See the [AI Agent Integration](ai-agents) guide for the safe way to hand secrets to agents — injected into a command's environment, never through the chat transcript.
+
 ## Output Modes
 
 Pass-CLI supports multiple output modes for different use cases.

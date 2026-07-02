@@ -24,6 +24,7 @@ Pass-CLI is a fast, secure password and API key manager that stores credentials 
 - **Health Checks**: Built-in `doctor` command for vault verification and troubleshooting
 - **Cross-Platform**: Single binary for Windows, macOS (Intel/ARM), and Linux (amd64/arm64)
 - **Script-Friendly**: Clean output modes (`--quiet`, `--field`, `--masked`) for shell integration
+- **AI Agent Ready**: Purpose-built for AI coding agents — inject secrets into a command's environment with `exec` so they never reach the chat transcript, logs, or files; plus a background agent for promptless access and self-served, version-matched agent skills (`pass-cli skills`)
 - **Usage Tracking**: Automatic tracking of where credentials are used across projects
 - **Local-First**: Works offline by default, optional cloud sync via rclone
 - **Cloud Sync**: Sync vault across devices with rclone (Google Drive, Dropbox, OneDrive, S3, etc.)
@@ -161,6 +162,30 @@ pass-cli doctor
 
 For complete command reference, flags, and examples, see [docs/03-reference/command-reference.md](docs/03-reference/command-reference.md).
 
+## AI Agent Integration
+
+Pass-CLI is built to be driven safely by **AI coding agents** (Claude Code, Cursor, Codex, and similar) — not just humans at a keyboard. An agent can use your real credentials to run real commands **without the secret ever landing in the chat transcript, a log, or a file the agent's harness watches** — the leak path that plagues copy-pasting or `echo`-ing secrets.
+
+```bash
+# Hand a secret to a command — injected into the child's environment only,
+# never on stdout, the clipboard, or shell history
+pass-cli exec --set GITHUB_TOKEN=github -- gh repo list
+
+# Materialize a composite secret (a config file or connection string)
+echo 'postgres://app:${pass:db/password}@localhost/app' | pass-cli inject
+
+# Unlock once, then resolve promptlessly for the rest of the session (POSIX)
+pass-cli agent start
+
+# The CLI serves its own version-matched agent guide — agents read this first
+pass-cli skills get core
+pass-cli skills install   # drop a discovery stub into ~/.claude/skills or ~/.agents/skills
+```
+
+The agent story combines **env injection** (`exec` / `export` / `inject`, with `base64`/`basicauth` value filters), an optional **background agent** that holds the unlocked vault for promptless access, and a **`skills`** command that ships the agent usage guide *inside the binary* so the guidance never drifts from the installed version.
+
+For the full workflow and the safety model, see the [AI Agent Integration guide](docs/02-guides/ai-agents.md).
+
 ## Security
 
 **Encryption**:
@@ -205,6 +230,7 @@ For complete security details, best practices, and migration guides, see [docs/0
 **Essential Guides**:
 - [Getting Started](docs/01-getting-started/quick-start.md) - First-time setup and basic workflows
 - [Usage Guide](docs/03-reference/command-reference.md) - Complete command reference, TUI shortcuts, configuration
+- [AI Agent Integration](docs/02-guides/ai-agents.md) - Let AI coding agents use your credentials safely (env injection, background agent, `skills`)
 - [Installation](docs/01-getting-started/quick-install.md) - All installation methods and package managers
 - [Recovery Phrase](docs/02-guides/recovery-phrase.md) - BIP39 recovery phrase setup and vault recovery
 - [Security](docs/03-reference/security-architecture.md) - Encryption details, best practices, migration guides

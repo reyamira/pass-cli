@@ -7,6 +7,7 @@ Task-oriented guides for common pass-cli workflows and features.
 
 {{< cards >}}
   {{< card link="basic-workflows" title="Basic Workflows" icon="cursor-click" subtitle="Daily operations - list, update, delete, generate credentials" >}}
+  {{< card link="ai-agents" title="AI Agent Integration" icon="sparkles" subtitle="Let AI coding agents use your credentials without leaking them" >}}
   {{< card link="recovery-phrase" title="Recovery Phrase" icon="shield-check" subtitle="BIP39 recovery phrase setup and vault recovery" >}}
   {{< card link="keychain-setup" title="Keychain Setup" icon="key" subtitle="Configure OS keychain integration for password storage" >}}
   {{< card link="usage-tracking" title="Usage Tracking" icon="chart-bar" subtitle="Automatic credential usage tracking by working directory" >}}

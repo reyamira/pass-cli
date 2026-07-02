@@ -17,6 +17,7 @@ Welcome to the **pass-cli** documentation. A secure, cross-platform, always-free
 - [Quick Start](01-getting-started/quick-start) - First-time setup and initialization (5 minutes)
 - [Quick Install](01-getting-started/quick-install) - Installation instructions for all platforms
 - [Command Reference](03-reference/command-reference) - Complete command reference
+- [AI Agent Integration](02-guides/ai-agents) - Let AI coding agents use your credentials safely
 - [Recovery Phrase](02-guides/recovery-phrase) - BIP39 recovery phrase setup and usage
 - [Backup & Restore Guide](02-guides/backup-restore) - Manual vault backup management
 - [TOTP & 2FA Support](02-guides/totp-guide) - Store and generate 2FA codes
@@ -30,6 +31,7 @@ Welcome to the **pass-cli** documentation. A secure, cross-platform, always-free
 - **Cross-Platform**: Works on Windows, macOS, and Linux
 - **Keychain Integration**: Optional OS keychain support for automatic unlocking
 - **Interactive TUI**: Beautiful terminal UI built with tview
+- **AI Agent Ready**: Hand secrets to AI coding agents via env injection — never through the chat transcript
 - **Clipboard Support**: Secure clipboard integration with auto-clear
 - **Usage Tracking**: Per-credential usage statistics
 - **Audit Logging**: HMAC-signed audit logs for all operations
