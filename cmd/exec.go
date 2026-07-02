@@ -92,7 +92,7 @@ it is not process isolation.`,
 
 func init() {
 	rootCmd.AddCommand(execCmd)
-	execCmd.Flags().StringArrayVar(&execSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service[/field] (repeatable; ':field' also accepted)")
+	execCmd.Flags().StringArrayVar(&execSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service[/field][|filter] (repeatable; ':field' also accepted; filters: base64, base64url, basicauth — quote the '|')")
 	execCmd.Flags().StringVarP(&execField, "field", "f", "password", "field to inject for all mappings (username, password, category, url, notes, service)")
 	execCmd.Flags().StringArrayVar(&execEnvFiles, "env-file", nil, "read KEY=${pass:service/field} template lines from a file (repeatable)")
 	execCmd.Flags().StringArrayVar(&execFrom, "from", nil, "read ENV_NAME=service/field mappings from a .pass-cli.toml manifest (repeatable)")
@@ -271,7 +271,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 	// ${pass:...} references) against the same read-only resolver.
 	for _, e := range envEntries {
 		value, rerr := envmap.RenderTemplate(e.Template, func(refs []envmap.TemplateRef) ([]string, error) {
-			return r.ResolveValues(templateMappings(refs), execField)
+			return resolver.ResolveValuesFiltered(r, templateMappings(refs), execField)
 		})
 		if rerr != nil {
 			return fmt.Errorf("env-file key %q: %w", e.Key, rerr)

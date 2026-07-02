@@ -4,6 +4,7 @@ package integration
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -110,6 +111,25 @@ func TestIntegration_Agent_ExecResolvesViaSocket(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != secret {
 		t.Errorf("exec via agent: got %q, want %q", strings.TrimSpace(out), secret)
+	}
+}
+
+// TestIntegration_Agent_FilterAppliedClientSide proves a value filter is applied
+// by the client even when a running agent serves the raw value over the socket:
+// the agent protocol carries no filter, so base64 must happen client-side and
+// match direct-mode output.
+func TestIntegration_Agent_FilterAppliedClientSide(t *testing.T) {
+	configPath, password, service, secret := setupExecVault(t)
+	sockPath, _, _ := startAgent(t, configPath, password)
+
+	out, stderr, err := runWithAgent(t, configPath, sockPath,
+		"exec", "--set", "TOK="+service+"|base64", "--", "sh", "-c", `printf %s "$TOK"`)
+	if err != nil {
+		t.Fatalf("filtered exec via agent failed: %v\nStderr: %s", err, stderr)
+	}
+	want := base64.StdEncoding.EncodeToString([]byte(secret))
+	if strings.TrimSpace(out) != want {
+		t.Errorf("filtered exec via agent: got %q, want %q", strings.TrimSpace(out), want)
 	}
 }
 

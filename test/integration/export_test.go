@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/base64"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -39,6 +40,27 @@ func TestIntegration_Export_RoundTrip(t *testing.T) {
 	stmt := strings.TrimSpace(stdout)
 	if got := evalSh(t, stmt, "MY_TOKEN"); got != secret {
 		t.Errorf("eval round-trip: got %q, want %q\nstmt: %s", got, secret, stmt)
+	}
+}
+
+// TestIntegration_Export_Base64Filter verifies a "| base64" filter is applied
+// before shell-quoting, so the emitted statement eval's to the encoded value.
+func TestIntegration_Export_Base64Filter(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses POSIX sh")
+	}
+	configPath, password, service, secret := setupExecVault(t)
+
+	stdin := helpers.BuildUnlockStdin(password)
+	stdout, stderr, err := helpers.RunCmd(t, binaryPath, configPath, stdin,
+		"export", "--set", "TOK="+service+"/password|base64")
+	if err != nil {
+		t.Fatalf("export failed: %v\nStderr: %s", err, stderr)
+	}
+	stmt := strings.TrimSpace(stdout)
+	want := base64.StdEncoding.EncodeToString([]byte(secret))
+	if got := evalSh(t, stmt, "TOK"); got != want {
+		t.Errorf("eval base64: got %q, want %q\nstmt: %s", got, want, stmt)
 	}
 }
 

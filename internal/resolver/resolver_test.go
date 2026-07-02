@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"bytes"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -154,5 +155,47 @@ func TestDirectResolver_InvalidField(t *testing.T) {
 
 	if _, err := r.ResolveValues([]envmap.Mapping{{EnvName: "X", Service: "github", Field: "totp"}}, "password"); err == nil {
 		t.Fatal("expected error for invalid field, got nil")
+	}
+}
+
+// TestResolveValuesFiltered covers the three filter cases: no filter (raw),
+// base64 on a single field, and basicauth combining username+password. It also
+// verifies an unknown filter (constructed directly, bypassing parse validation)
+// propagates as an error.
+func TestResolveValuesFiltered(t *testing.T) {
+	vs, _ := newUnlockedVault(t)
+	defer vs.Lock()
+
+	r := NewDirect(vs)
+	defer func() { _ = r.Close() }()
+
+	got, err := ResolveValuesFiltered(r, []envmap.Mapping{
+		{Service: "github", Field: "password"},                   // no filter -> raw
+		{Service: "github", Field: "password", Filter: "base64"}, // base64 of the value
+		{Service: "github", Filter: envmap.FilterBasicAuth},      // base64(user:pass)
+	}, "password")
+	if err != nil {
+		t.Fatalf("ResolveValuesFiltered: %v", err)
+	}
+
+	want := []string{
+		"s3cr3t-pw",
+		base64.StdEncoding.EncodeToString([]byte("s3cr3t-pw")),
+		base64.StdEncoding.EncodeToString([]byte("octocat:s3cr3t-pw")),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d values, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("value[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// An unknown filter (bypassing parse-time validation) is a hard error.
+	if _, err := ResolveValuesFiltered(r, []envmap.Mapping{
+		{Service: "github", Field: "password", Filter: "bogus"},
+	}, "password"); err == nil {
+		t.Error("expected error for unknown filter, got nil")
 	}
 }

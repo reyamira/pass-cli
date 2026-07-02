@@ -38,14 +38,14 @@ func ParseManifest(data []byte) ([]Mapping, error) {
 		if !ValidEnvName(name) {
 			return nil, fmt.Errorf("invalid environment variable name %q in manifest", name)
 		}
-		service, field, err := SplitPath(mf.Env[name])
+		service, field, filter, err := SplitPath(mf.Env[name])
 		if err != nil {
 			return nil, fmt.Errorf("manifest entry %q: %w", name, err)
 		}
 		if service == "" {
 			return nil, fmt.Errorf("manifest entry %q has an empty service", name)
 		}
-		mappings = append(mappings, Mapping{EnvName: name, Service: service, Field: field})
+		mappings = append(mappings, Mapping{EnvName: name, Service: service, Field: field, Filter: filter})
 	}
 	return mappings, nil
 }

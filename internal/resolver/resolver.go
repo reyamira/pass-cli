@@ -37,13 +37,69 @@ type Resolver interface {
 // resolver primitive value-only, so template rendering can reuse ResolveValues
 // without parsing a "NAME=" prefix back off.
 func ResolveEnv(r Resolver, mappings []envmap.Mapping, defaultField string) ([]string, error) {
-	values, err := r.ResolveValues(mappings, defaultField)
+	values, err := ResolveValuesFiltered(r, mappings, defaultField)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]string, len(mappings))
 	for i, m := range mappings {
 		out[i] = m.EnvName + "=" + values[i]
+	}
+	return out, nil
+}
+
+// ResolveValuesFiltered resolves each mapping's value and applies its Filter,
+// returning one value per mapping in order. It is the filtered counterpart to
+// Resolver.ResolveValues used by every injection surface (--set, manifests, and
+// ${pass:...} templates).
+//
+// Filters are applied client-side, AFTER the backend returns raw values, so the
+// agent's values-only protocol is untouched — base64 is identical whether a
+// direct vault or a resident daemon served the value. Most mappings resolve one
+// field; a "basicauth" mapping resolves TWO fields (username and password) of its
+// service and combines them into base64("username:password"). Both sub-resolves
+// go through the normal value path, so a socket backend still answers the whole
+// request in one batch round-trip.
+func ResolveValuesFiltered(r Resolver, mappings []envmap.Mapping, defaultField string) ([]string, error) {
+	// Expand each mapping into its sub-requests (1, or 2 for basicauth), recording
+	// how to fold the results back into one value per mapping.
+	type plan struct {
+		filter string
+		start  int // index of this mapping's first value in the flat result
+	}
+	subs := make([]envmap.Mapping, 0, len(mappings))
+	plans := make([]plan, len(mappings))
+	for i, m := range mappings {
+		plans[i] = plan{filter: m.Filter, start: len(subs)}
+		if m.Filter == envmap.FilterBasicAuth {
+			subs = append(subs,
+				envmap.Mapping{Service: m.Service, Field: "username"},
+				envmap.Mapping{Service: m.Service, Field: "password"},
+			)
+			continue
+		}
+		subs = append(subs, envmap.Mapping{Service: m.Service, Field: m.Field})
+	}
+
+	values, err := r.ResolveValues(subs, defaultField)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]string, len(mappings))
+	for i, p := range plans {
+		switch p.filter {
+		case "":
+			out[i] = values[p.start]
+		case envmap.FilterBasicAuth:
+			// HTTP Basic auth: base64("username:password") (standard encoding).
+			out[i], err = envmap.ApplyValueFilter("base64", values[p.start]+":"+values[p.start+1])
+		default:
+			out[i], err = envmap.ApplyValueFilter(p.filter, values[p.start])
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

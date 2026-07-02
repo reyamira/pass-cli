@@ -5,10 +5,11 @@ import (
 	"strings"
 )
 
-// TemplateRef is one ${pass:service[/field]} reference found in a template.
+// TemplateRef is one ${pass:service[/field][ | filter]} reference found in a template.
 type TemplateRef struct {
 	Service string
 	Field   string // "" means the caller's default field
+	Filter  string // optional value transform (e.g. "base64"); "" = none
 }
 
 const passMarker = "${pass:"
@@ -35,14 +36,14 @@ func parseTemplate(s string) (literals []string, refs []TemplateRef, err error) 
 			return nil, nil, fmt.Errorf("unterminated %s...} reference: %q", passMarker, s[start:])
 		}
 		inner := rest[:end]
-		service, field, e := SplitPath(inner)
+		service, field, filter, e := SplitPath(inner)
 		if e != nil {
 			return nil, nil, fmt.Errorf("invalid reference %s%s}: %w", passMarker, inner, e)
 		}
 		if service == "" {
 			return nil, nil, fmt.Errorf("empty service in reference %s%s}", passMarker, inner)
 		}
-		refs = append(refs, TemplateRef{Service: service, Field: field})
+		refs = append(refs, TemplateRef{Service: service, Field: field, Filter: filter})
 		i = start + len(passMarker) + end + 1
 	}
 }

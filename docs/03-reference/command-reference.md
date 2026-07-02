@@ -450,6 +450,24 @@ pass-cli exec \
   -- ./run.sh
 ```
 
+**Value filters (`| filter`):** a reference may end with a filter that transforms the value before injection. The same grammar works everywhere a reference is parsed — `--set`, `.pass-cli.toml` manifests, and `${pass:...}` templates (`inject`, `exec --env-file`).
+
+| Filter | Result |
+|--------|--------|
+| `base64` | standard base64 of the value (e.g. a Bearer token) |
+| `base64url` | URL-safe base64 of the value |
+| `basicauth` | `base64("username:password")` from the credential — for an HTTP `Authorization: Basic` header; takes no field |
+
+```bash
+# base64 a token; combine a credential's user:password for Basic auth
+pass-cli exec \
+  --set 'TOKEN=api/token|base64' \
+  --set 'AUTH=api|basicauth' \
+  -- ./run.sh
+```
+
+One filter per reference. An unknown or empty filter is a hard error and nothing is injected (fail closed); for `--set` and manifests it is caught before the vault is even opened. On the command line the `|` must be **shell-quoted** (as above). Filters are not applied to the positional `<service>` form — use `--set` or a template.
+
 #### Flags
 
 | Flag | Short | Type | Description |

@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/arimxyer/pass-cli/internal/envmap"
+	"github.com/arimxyer/pass-cli/internal/resolver"
 )
 
 var (
@@ -67,7 +68,7 @@ blessed replacement for VAR="$(pass-cli get ...)", not as a replacement for 'exe
 
 func init() {
 	rootCmd.AddCommand(exportCmd)
-	exportCmd.Flags().StringArrayVar(&exportSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service[/field] (repeatable; ':field' also accepted)")
+	exportCmd.Flags().StringArrayVar(&exportSets, "set", nil, "map an environment variable to a credential: ENV_NAME=service[/field][|filter] (repeatable; ':field' also accepted; filters: base64, base64url, basicauth — quote the '|')")
 	exportCmd.Flags().StringVarP(&exportField, "field", "f", "password", "field to export for all mappings (username, password, category, url, notes, service)")
 	exportCmd.Flags().StringVar(&exportFormat, "format", "sh", "shell syntax: sh, fish, or powershell")
 	exportCmd.Flags().StringArrayVar(&exportFrom, "from", nil, "read ENV_NAME=service/field mappings from a .pass-cli.toml manifest (repeatable)")
@@ -140,7 +141,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	values, err := r.ResolveValues(mappings, exportField)
+	values, err := resolver.ResolveValuesFiltered(r, mappings, exportField)
 	if err != nil {
 		return err
 	}

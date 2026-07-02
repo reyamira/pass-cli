@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/arimxyer/pass-cli/internal/envmap"
+	"github.com/arimxyer/pass-cli/internal/resolver"
 )
 
 var (
@@ -32,11 +33,18 @@ connection string can be materialized in one step.
   pass-cli inject -i config.tmpl -o config.ini
 
 Reference syntax:
-  ${pass:service}          the service's default field (see -f/--field)
-  ${pass:service/field}    a specific field (username, password, url, ...)
+  ${pass:service}              the service's default field (see -f/--field)
+  ${pass:service/field}        a specific field (username, password, url, ...)
+  ${pass:service/field | flt}  apply a filter to the value (see below)
+
+Filters (optional, one per reference):
+  base64     standard base64 of the value (e.g. a Bearer token)
+  base64url  URL-safe base64 of the value
+  basicauth  base64("username:password") from the credential (takes no field)
 
 Only ${pass:...} is special; $VAR, ${VAR}, and $(...) pass through untouched. An
-unknown or malformed reference is a hard error and nothing is written.
+unknown or malformed reference — including an unknown filter — is a hard error
+and nothing is written.
 
 When the template is piped on stdin, unlock via the OS keychain: the master-
 password prompt also reads stdin, so a password prompt would consume the piped
@@ -48,6 +56,9 @@ is on your terminal/pipe. Prefer 'exec' (child-scoped env) when you can; use
 'inject' for the composite/derived-secret cases 'exec' cannot express.`,
 	Example: `  # Materialize a connection string
   echo 'redis://:${pass:redis/password}@cache:6379' | pass-cli inject
+
+  # A base64 Authorization header from a single credential's user:password
+  echo 'Authorization: Basic ${pass:api | basicauth}' | pass-cli inject
 
   # Render a template file to a 0600 output file
   pass-cli inject -i .env.tmpl -o .env`,
@@ -98,7 +109,7 @@ func runInject(cmd *cobra.Command, _ []string) error {
 	// Read-only via the shared resolver (no usage write, no sync push). All
 	// references in the template resolve in a single batch call.
 	rendered, err := envmap.RenderTemplate(string(input), func(refs []envmap.TemplateRef) ([]string, error) {
-		return r.ResolveValues(templateMappings(refs), injectField)
+		return resolver.ResolveValuesFiltered(r, templateMappings(refs), injectField)
 	})
 	if err != nil {
 		return err
@@ -122,7 +133,7 @@ func runInject(cmd *cobra.Command, _ []string) error {
 func templateMappings(refs []envmap.TemplateRef) []envmap.Mapping {
 	ms := make([]envmap.Mapping, len(refs))
 	for i, ref := range refs {
-		ms[i] = envmap.Mapping{Service: ref.Service, Field: ref.Field}
+		ms[i] = envmap.Mapping{Service: ref.Service, Field: ref.Field, Filter: ref.Filter}
 	}
 	return ms
 }
