@@ -81,9 +81,9 @@ Service managers are non-interactive, so **running the agent as a service requir
 keychain unlock** (`pass-cli keychain enable`) — otherwise the agent has no way to
 obtain the master password at startup. Templates (not auto-installed):
 
-- **Linux (systemd `--user`):** [`packaging/systemd/pass-cli-agent.service`](../../packaging/systemd/pass-cli-agent.service)
+- **Linux (systemd `--user`):** [`packaging/systemd/pass-cli-agent.service`](https://github.com/reyamira/pass-cli/blob/main/packaging/systemd/pass-cli-agent.service)
   — sets `LimitMEMLOCK=infinity` so `mlockall` works, and stops at logout.
-- **macOS (launchd LaunchAgent):** [`packaging/launchd/com.reyamira.pass-cli.agent.plist`](../../packaging/launchd/com.reyamira.pass-cli.agent.plist)
+- **macOS (launchd LaunchAgent):** [`packaging/launchd/com.reyamira.pass-cli.agent.plist`](https://github.com/reyamira/pass-cli/blob/main/packaging/launchd/com.reyamira.pass-cli.agent.plist)
 
 Windows is not yet supported (the agent uses a unix socket; a named-pipe transport
 is planned).
