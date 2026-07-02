@@ -60,33 +60,38 @@ go vet ./...
 golangci-lint run
 ```
 
-### 2. Create Release Tag
+### 2. Update the CHANGELOG and Create the Release Tag
 
-**Note:** Version numbers and dates in documentation are **automatically updated** by GitHub Actions when you push a tag. You don't need to manually update them.
-
-The `update-docs-version.yml` workflow automatically updates:
-- Documentation version footers (8 files in `docs/`)
-- "Last Updated" dates to current month/year
-- Package manifest versions (homebrew/pass-cli.rb, scoop/pass-cli.json)
-
-**What you need to do manually:**
-- Update CHANGELOG.md with release notes (if you maintain one)
+Update `CHANGELOG.md` first: rename the `[Unreleased]` heading to `[X.Y.Z] - YYYY-MM-DD` and add a fresh empty `[Unreleased]` above it. `main` is protected, so land this through a PR, then tag the resulting merge commit:
 
 ```bash
-# Create and push a version tag
-git tag -a v0.0.1 -m "Release v0.0.1"
-git push origin v0.0.1
+# Create and push a version tag (on the merged CHANGELOG-bump commit)
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
 ```
 
-### 3. Run GoReleaser
+Pushing the tag triggers `release.yml` → GoReleaser (step 3), which does the actual publishing.
+
+**What is and isn't automated:**
+- **Automated on tag** (by GoReleaser): the GitHub release with binaries/checksums/SBOMs, plus a freshly generated Homebrew formula and Scoop manifest pushed to `reyamira/homebrew-tap` and `reyamira/scoop-bucket`. This is what `brew`/`scoop` users install.
+- **NOT automated:** documentation version footers and the in-repo `homebrew/pass-cli.rb` / `scoop/pass-cli.json` files. Those in-repo copies are stale static placeholders **not** consumed by the release pipeline — GoReleaser regenerates the real manifests into the tap/bucket repos — so leave them be (or update by hand if you want them accurate). There is **no** `update-docs-version.yml` workflow; an earlier version of this document described one, but it does not exist.
+- **Manual:** the CHANGELOG bump above.
+
+### 3. GoReleaser runs in CI (automatic)
+
+Pushing the tag in step 2 is all that's needed: `.github/workflows/release.yml` triggers on `v*` tags and runs `goreleaser release --clean` with the pinned GoReleaser version and the `GITHUB_TOKEN` / `HOMEBREW_TAP_TOKEN` / `SCOOP_BUCKET_TOKEN` secrets. Watch it with `gh run watch` and confirm the release published.
+
+Running GoReleaser locally is only a manual fallback (e.g. CI is unavailable), and requires the same tokens exported in your shell:
 
 ```bash
-# Release to GitHub
 export GITHUB_TOKEN="your-github-token"
 goreleaser release --clean
+```
 
-# Or use goreleaser with GitHub Actions (recommended)
-# Push the tag and let CI handle the release
+Before tagging, you can validate the full build without publishing:
+
+```bash
+goreleaser release --snapshot --clean --skip=publish
 ```
 
 ## Configuration
