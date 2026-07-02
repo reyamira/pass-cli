@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-02
+
 ### Added
 - **`skills` command — self-served, version-matched agent guides** — `pass-cli skills` ships an AI-agent usage guide embedded in the binary, mirroring the pattern that makes tools like agent-browser easy for agents to adopt: `pass-cli skills list` lists the available skills and `pass-cli skills get core` prints the safe-usage guide (`exec`/`export`/`inject`/`agent`/`list`/`get` plus the leak traps to avoid), with `--full` appending a complete command reference. Because the content ships *in the binary* (via `//go:embed`), the guidance always matches the installed version and can't drift from shipped behavior. `pass-cli skills install` writes a small discovery stub into a detected agent skills directory (`~/.claude/skills` or `~/.agents/skills`, or `--dir <path>`) that points agents at `pass-cli skills get core`; an existing, differing stub is preserved unless `--force` is given. This is the first step toward pass-cli being a first-class tool for humans **and** their AI agents.
 
