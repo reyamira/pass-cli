@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -111,5 +112,67 @@ func TestIntegration_Exec_EnvFile(t *testing.T) {
 	want := "postgres://app:" + secret + "@localhost/app"
 	if strings.TrimSpace(stdout) != want {
 		t.Errorf("env-file injection: stdout = %q, want %q", strings.TrimSpace(stdout), want)
+	}
+}
+
+// TestIntegration_Inject_Base64Filter verifies a "| base64" filter encodes the
+// resolved value.
+func TestIntegration_Inject_Base64Filter(t *testing.T) {
+	configPath, password, service, secret := setupExecVault(t)
+
+	tmpl := filepath.Join(t.TempDir(), "b64.tmpl")
+	if err := os.WriteFile(tmpl, []byte("X=${pass:"+service+"/password | base64}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, err := helpers.RunCmd(t, binaryPath, configPath, helpers.BuildUnlockStdin(password),
+		"inject", "--in-file", tmpl)
+	if err != nil {
+		t.Fatalf("inject failed: %v\nStderr: %s", err, stderr)
+	}
+	want := "X=" + base64.StdEncoding.EncodeToString([]byte(secret)) + "\n"
+	if stdout != want {
+		t.Errorf("inject output = %q, want %q", stdout, want)
+	}
+}
+
+// TestIntegration_Inject_BasicAuthFilter verifies "| basicauth" combines the
+// credential's username and password into base64("user:pass").
+func TestIntegration_Inject_BasicAuthFilter(t *testing.T) {
+	configPath, password, service, secret := setupExecVault(t)
+
+	tmpl := filepath.Join(t.TempDir(), "auth.tmpl")
+	if err := os.WriteFile(tmpl, []byte("A=${pass:"+service+" | basicauth}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, err := helpers.RunCmd(t, binaryPath, configPath, helpers.BuildUnlockStdin(password),
+		"inject", "--in-file", tmpl)
+	if err != nil {
+		t.Fatalf("inject failed: %v\nStderr: %s", err, stderr)
+	}
+	want := "A=" + base64.StdEncoding.EncodeToString([]byte("execuser:"+secret)) + "\n"
+	if stdout != want {
+		t.Errorf("inject output = %q, want %q", stdout, want)
+	}
+}
+
+// TestIntegration_Inject_UnknownFilterFailsClosed verifies an unknown filter is a
+// hard error that writes nothing.
+func TestIntegration_Inject_UnknownFilterFailsClosed(t *testing.T) {
+	configPath, password, service, _ := setupExecVault(t)
+
+	tmpl := filepath.Join(t.TempDir(), "bad.tmpl")
+	if err := os.WriteFile(tmpl, []byte("X=${pass:"+service+"/password | bogus}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, _, err := helpers.RunCmd(t, binaryPath, configPath, helpers.BuildUnlockStdin(password),
+		"inject", "--in-file", tmpl)
+	if err == nil {
+		t.Fatalf("expected error for unknown filter, got output %q", stdout)
+	}
+	if stdout != "" {
+		t.Errorf("expected no output on failure, got %q", stdout)
 	}
 }

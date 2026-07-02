@@ -34,6 +34,7 @@ type Mapping struct {
 	EnvName string
 	Service string
 	Field   string
+	Filter  string // optional transform applied to the resolved value (e.g. "base64"); "" = none
 }
 
 // ParseSetSpec parses a single "NAME=service[/field]" spec into a Mapping. The
@@ -44,26 +45,60 @@ func ParseSetSpec(spec string) (Mapping, error) {
 	if !ok || name == "" || rest == "" {
 		return Mapping{}, fmt.Errorf("invalid mapping %q: expected NAME=service[/field]", spec)
 	}
-	service, field, err := SplitPath(rest)
+	service, field, filter, err := SplitPath(rest)
 	if err != nil {
 		return Mapping{}, fmt.Errorf("invalid mapping %q: %w", spec, err)
 	}
-	return Mapping{EnvName: name, Service: service, Field: field}, nil
+	return Mapping{EnvName: name, Service: service, Field: field, Filter: filter}, nil
 }
 
-// SplitPath splits a "service[/field]" credential reference into its service and
-// optional field. It is the single home for the path separator, shared by
-// --set, the project manifest, and ${pass:...} templates.
+// SplitPath splits a "service[/field][ | filter]" credential reference into its
+// service, optional field, and optional filter. It is the single home for the
+// reference grammar, shared by --set, the project manifest, and ${pass:...}
+// templates, so a filter added here works on every surface at once.
 //
-//   - Slash is preferred and wins: if the reference contains '/', it is split on
-//     '/', and any ':' in it is a literal character (the fragility fix). Exactly
-//     one slash — two segments, service/field — is accepted for now; three or
-//     more segments error, reserving vault/service/field for a future multi-vault.
+// An optional trailing "| filter" is peeled first (on the first '|', which is
+// thereby reserved in references like '/' and ':'). The filter name is validated
+// against IsKnownFilter and an empty filter is an error — both fail closed at
+// parse time (for --set and manifests, before the vault is opened). Whitespace is trimmed ONLY when a pipe
+// is present, so a filterless reference is byte-for-byte the original behavior.
+// The bare path is then split by splitServiceField. basicauth takes no field.
+func SplitPath(ref string) (service, field, filter string, err error) {
+	path := ref
+	if left, right, hasPipe := strings.Cut(ref, "|"); hasPipe {
+		path = strings.TrimSpace(left)
+		filter = strings.TrimSpace(right)
+		if filter == "" {
+			return "", "", "", fmt.Errorf("empty filter after '|': %q", ref)
+		}
+		if !IsKnownFilter(filter) {
+			return "", "", "", fmt.Errorf("unknown filter %q in %q", filter, ref)
+		}
+	}
+
+	service, field, err = splitServiceField(path)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	if filter == FilterBasicAuth && field != "" {
+		return "", "", "", fmt.Errorf("filter %q takes no field: %q", FilterBasicAuth, ref)
+	}
+	return service, field, filter, nil
+}
+
+// splitServiceField splits a bare "service[/field]" path (filter already peeled)
+// into its service and optional field.
+//
+//   - Slash is preferred and wins: if the path contains '/', it is split on '/',
+//     and any ':' in it is a literal character (the fragility fix). Exactly one
+//     slash — two segments, service/field — is accepted for now; three or more
+//     segments error, reserving vault/service/field for a future multi-vault.
 //   - Otherwise the legacy colon form applies, byte-for-byte the original
 //     behavior: the first ':' separates service from an optional field.
-//   - With no separator at all, the whole reference is the service and the field
-//     is empty (the caller falls back to its default field).
-func SplitPath(ref string) (service, field string, err error) {
+//   - With no separator at all, the whole path is the service and the field is
+//     empty (the caller falls back to its default field).
+func splitServiceField(ref string) (service, field string, err error) {
 	if strings.Contains(ref, "/") {
 		segs := strings.Split(ref, "/")
 		if len(segs) > 2 {
